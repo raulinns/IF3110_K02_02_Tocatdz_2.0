@@ -2,9 +2,6 @@ package security
 
 import "context"
 
-// ID is an internal UUID string allocated server-side. Validate canonical UUIDs
-// at HTTP boundaries; adapters map ID to their native UUID without importing
-// generated SQL types into this package.
 type ID string
 
 type DatabaseAccess string
@@ -27,8 +24,6 @@ const (
 	ActionExecuteMigration DatabaseAction = "migration.execute"
 )
 
-// EffectiveAccess applies maximum privilege over group grants for ONE database.
-// Unknown persisted values fail closed rather than silently becoming a grant.
 func EffectiveAccess(grants []DatabaseAccess) (DatabaseAccess, error) {
 	result := AccessNone
 	for _, grant := range grants {
@@ -47,8 +42,6 @@ func EffectiveAccess(grants []DatabaseAccess) (DatabaseAccess, error) {
 	return result, nil
 }
 
-// Allows is pure policy, NOT an authorization check. Services must use
-// Authorizer to load current account status and grants before invoking it.
 func Allows(access DatabaseAccess, action DatabaseAction) bool {
 	if access != AccessViewOnly && access != AccessViewEdit {
 		return false
@@ -63,8 +56,6 @@ func Allows(access DatabaseAccess, action DatabaseAction) bool {
 	}
 }
 
-// Principal is internal authenticated context, never a client-supplied DTO.
-// AuthVersion is an account security epoch, not a role or a DB access level.
 type Principal struct {
 	UserID      ID     `json:"-"`
 	SessionID   ID     `json:"-"`
@@ -72,25 +63,18 @@ type Principal struct {
 	CSRFEpoch   uint64 `json:"-"`
 }
 
-// Identity is the explicit allowlist exposed to templates or JSON responses.
-// PlatformAdmin controls UI visibility only; Authorizer remains authoritative.
 type Identity struct {
 	UserID        ID     `json:"user_id"`
 	Username      string `json:"username"`
 	PlatformAdmin bool   `json:"platform_admin"`
 }
 
-// Authorizer revalidates active account, session, security epoch, and current
-// grants using backend state. Unknown actions/empty IDs deny. Infrastructure
-// errors return ErrUnavailable and never fall back to permission cached in UI.
-// Platform Admin has NO implicit database grant.
+// Cek akses dari data backend terbaru, termasuk untuk admin yang tetap perlu grant database.
 type Authorizer interface {
 	RequirePlatformAdmin(context.Context, Principal) error
 	RequireDatabase(context.Context, Principal, ID, DatabaseAction) error
 }
 
-// AccessSnapshot is loaded consistently from current account/group/grant state.
-// GroupAccess contains only grants for the requested database.
 type AccessSnapshot struct {
 	Account     Account
 	GroupAccess []DatabaseAccess
@@ -102,7 +86,6 @@ type AccessRepository interface {
 
 type principalKey struct{}
 
-// WithPrincipal is called by authentication middleware, never from form data.
 func WithPrincipal(ctx context.Context, principal Principal) context.Context {
 	return context.WithValue(ctx, principalKey{}, principal)
 }

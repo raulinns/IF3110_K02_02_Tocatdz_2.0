@@ -5,9 +5,7 @@ import (
 	"log/slog"
 )
 
-// Secret reduces accidental disclosure through fmt, slog, and serialization.
-// Reveal is reserved for hashing, cryptography, DB adapters, and cookie transport.
-// It is not memory encryption; never log Reveal() or serialize domain records.
+// Secret menyamarkan nilai saat dicetak atau dicatat di log, tapi tidak mengenkripsi isi memori
 type Secret struct {
 	value string
 }

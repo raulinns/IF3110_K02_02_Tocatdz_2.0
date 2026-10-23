@@ -2,8 +2,6 @@ package security
 
 import "errors"
 
-// Errors are safe categories, never containers for credentials, tokens, SQL, or
-// driver messages. HTTP handlers must translate them using the documented map.
 var (
 	ErrInvalidInput        = errors.New("invalid input")
 	ErrInvalidCredentials  = errors.New("invalid credentials")
