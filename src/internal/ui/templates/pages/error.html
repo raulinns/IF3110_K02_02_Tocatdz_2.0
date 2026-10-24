@@ -1,4 +1,8 @@
 {{define "content"}}{{with .Content}}
-<h1>{{.Status}}</h1>
-<p>{{.Message}}</p>
+<section class="status-page">
+	<p class="status-code mono">{{.Status}}</p>
+	<h1>{{.Message}}</h1>
+	{{if eq .Status 401}}<a class="button button-primary" href="/login">Kembali ke halaman login</a>
+	{{else}}<a class="button button-ghost" href="/databases">Kembali ke daftar database</a>{{end}}
+</section>
 {{end}}{{end}}
