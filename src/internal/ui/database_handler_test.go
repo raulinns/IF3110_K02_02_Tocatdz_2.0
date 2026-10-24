@@ -25,11 +25,16 @@ func (l *fakeLister) ListAccessible(_ context.Context, principal security.Princi
 }
 
 func testDatabaseUI(t *testing.T, lister *fakeLister) *http.ServeMux {
+	return testDatabaseUIWith(t, lister, Features{Migrations: true})
+}
+
+func testDatabaseUIWith(t *testing.T, lister *fakeLister, features Features) *http.ServeMux {
 	t.Helper()
 	renderer, err := NewRenderer()
 	if err != nil {
 		t.Fatal(err)
 	}
+	renderer.features = features
 	ui, err := NewDatabaseUI(lister, &fakeGuard{}, renderer)
 	if err != nil {
 		t.Fatal(err)
@@ -80,6 +85,11 @@ func TestDatabaseListShowsAccessibleDatabases(t *testing.T) {
 	}
 	if lister.calls != 1 || lister.principal != testPrincipal {
 		t.Fatal("lister not called with principal from context")
+	}
+	w = httptest.NewRecorder()
+	testDatabaseUIWith(t, lister, Features{}).ServeHTTP(w, listRequest(true))
+	if strings.Contains(w.Body.String(), "/migrations") || !strings.Contains(w.Body.String(), "/schema") {
+		t.Fatal("migration link shown while migration pages are not registered")
 	}
 }
 

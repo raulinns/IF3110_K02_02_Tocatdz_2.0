@@ -11,6 +11,9 @@ type FrontendConfig struct {
 	Security   security.HTTPMiddlewareConfig
 	Viewer     explorer.Viewer
 	Authorizer security.Authorizer
+	// Opsional sampai service-nya tersedia; selama nil route dan link-nya tidak dipasang
+	Migrations MigrationService
+	Admin      *AdminServices
 }
 
 type Frontend struct{ routes []security.RouteRegistrar }
@@ -54,7 +57,24 @@ func NewFrontend(cfg FrontendConfig) (*Frontend, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Frontend{routes: []security.RouteRegistrar{auth, databases, tables, static}}, nil
+	routes := []security.RouteRegistrar{auth, databases, tables, static}
+	var features Features
+	if !missingDependency(cfg.Migrations) {
+		migrations, err := NewMigrationUI(cfg.Migrations, guard, access, renderer)
+		if err != nil {
+			return nil, err
+		}
+		routes, features.Migrations = append(routes, migrations), true
+	}
+	if cfg.Admin != nil {
+		admin, err := NewAdminUI(*cfg.Admin, guard, access, renderer)
+		if err != nil {
+			return nil, err
+		}
+		routes, features.Admin = append(routes, admin), true
+	}
+	renderer.features = features
+	return &Frontend{routes: routes}, nil
 }
 
 func (f *Frontend) RegisterRoutes(mux *http.ServeMux) {

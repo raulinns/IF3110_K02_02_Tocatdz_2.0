@@ -3,6 +3,7 @@
 	<a class="brand" href="/databases">Tocatdz</a>
 	<nav class="topbar-nav" aria-label="Navigasi utama">
 		<a href="/databases">Database</a>
+		{{if and (feature "admin") .Identity.PlatformAdmin}}<a href="/admin/users">Admin</a>{{end}}
 	</nav>
 	<div class="topbar-user">
 		<span class="mono">{{.Identity.Username}}</span>
