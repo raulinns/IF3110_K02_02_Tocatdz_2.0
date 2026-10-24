@@ -18,7 +18,7 @@
 					<td>{{.AccessLabel}}</td>
 					<td class="table-actions">
 						<a href="/databases/{{.ID}}/schema">Schema</a>
-						<a href="/databases/{{.ID}}/migrations">Migration</a>
+						{{if feature "migrations"}}<a href="/databases/{{.ID}}/migrations">Migration</a>{{end}}
 					</td>
 				</tr>
 				{{end}}

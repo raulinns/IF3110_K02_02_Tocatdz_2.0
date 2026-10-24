@@ -13,6 +13,7 @@ type FrontendConfig struct {
 	Viewer     explorer.Viewer
 	Authorizer security.Authorizer
 	Migrations migration.Application
+	Admin      *AdminServices
 }
 
 type Frontend struct{ routes []security.RouteRegistrar }
@@ -57,6 +58,7 @@ func NewFrontend(cfg FrontendConfig) (*Frontend, error) {
 		return nil, err
 	}
 	routes := []security.RouteRegistrar{auth, databases, tables, static}
+	var features Features
 	if cfg.Migrations != nil {
 		adapter, err := NewMigrationAdapter(cfg.Migrations)
 		if err != nil {
@@ -66,8 +68,16 @@ func NewFrontend(cfg FrontendConfig) (*Frontend, error) {
 		if err != nil {
 			return nil, err
 		}
-		routes = append(routes, migrations)
+		routes, features.Migrations = append(routes, migrations), true
 	}
+	if cfg.Admin != nil {
+		admin, err := NewAdminUI(*cfg.Admin, guard, access, renderer)
+		if err != nil {
+			return nil, err
+		}
+		routes, features.Admin = append(routes, admin), true
+	}
+	renderer.features = features
 	return &Frontend{routes: routes}, nil
 }
 

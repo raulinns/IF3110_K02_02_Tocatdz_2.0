@@ -1,1 +1,33 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}
+<section>
+	<h1>Koneksi database</h1>
+	{{template "admin-nav" .Section}}
+	{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
+	<div class="table-wrap">
+		<table class="table">
+			<thead><tr><th scope="col">Nama</th><th scope="col">ID</th></tr></thead>
+			<tbody>
+				{{range .Data}}
+				<tr><td class="mono">{{.Name}}</td><td class="mono">{{.ID}}</td></tr>
+				{{else}}
+				<tr><td colspan="2">Belum ada koneksi.</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	<h2>Tambah koneksi PostgreSQL</h2>
+	<form method="post" action="/admin/connections" class="form narrow">
+		<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+		<div class="field">
+			<label for="connection-name">Nama tampilan</label>
+			<input id="connection-name" name="name" type="text" maxlength="64" required>
+		</div>
+		<div class="field">
+			<label for="connection-dsn">Connection string</label>
+			<input id="connection-dsn" name="dsn" type="password" autocomplete="off" spellcheck="false" placeholder="postgres://user:password@host:5432/dbname" required>
+		</div>
+		<p class="hint">Connection string disimpan terenkripsi dan tidak akan ditampilkan lagi.</p>
+		<button type="submit" class="button button-primary">Simpan koneksi</button>
+	</form>
+</section>
+{{end}}{{end}}
