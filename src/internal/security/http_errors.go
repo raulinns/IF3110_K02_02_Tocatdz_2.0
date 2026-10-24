@@ -9,6 +9,8 @@ import (
 
 func HTTPStatus(err error) (int, string) {
 	switch {
+	case errors.Is(err, ErrTargetNotReady):
+		return http.StatusBadRequest, "Koneksi target perlu akun terbatas dan konfigurasi receipt yang sesuai."
 	case errors.Is(err, ErrPasswordTooShort):
 		return http.StatusBadRequest, fmt.Sprintf("Password minimal %d karakter", MinPasswordRunes)
 	case errors.Is(err, ErrPasswordTooLong):

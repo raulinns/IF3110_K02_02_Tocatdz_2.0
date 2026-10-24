@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/url"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -48,8 +49,19 @@ func Database(t *testing.T, environment string) string {
 			return
 		}
 		defer conn.Close(ctx)
+		var oid uint32
+		if err := conn.QueryRow(ctx, "SELECT oid FROM pg_database WHERE datname=$1", name).Scan(&oid); err != nil {
+			t.Error("cannot identify isolated integration database")
+			return
+		}
 		if _, err := conn.Exec(ctx, "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)"); err != nil {
 			t.Error("cannot remove isolated integration database")
+			return
+		}
+		for _, prefix := range []string{"tocatdz_exec_", "tocatdz_receipts_"} {
+			if _, err := conn.Exec(ctx, "DROP ROLE IF EXISTS "+pgx.Identifier{prefix + strconv.FormatUint(uint64(oid), 10)}.Sanitize()); err != nil {
+				t.Error("cannot remove integration target role")
+			}
 		}
 	})
 	copy := *server

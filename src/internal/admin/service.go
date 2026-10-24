@@ -112,8 +112,8 @@ func safeError(err error) error {
 	if err == nil {
 		return nil
 	}
-	// Alasan kebijakan password dipertahankan supaya UI bisa menampilkan pesan yang spesifik.
-	for _, reason := range []error{security.ErrPasswordTooShort, security.ErrPasswordTooLong, security.ErrPasswordInvalidEncoding} {
+	// Alasan password dan setup koneksi dipertahankan supaya pesan di UI jelas.
+	for _, reason := range []error{security.ErrPasswordTooShort, security.ErrPasswordTooLong, security.ErrPasswordInvalidEncoding, security.ErrTargetNotReady} {
 		if errors.Is(err, reason) {
 			return errors.Join(security.ErrInvalidInput, reason)
 		}

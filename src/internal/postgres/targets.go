@@ -16,12 +16,13 @@ import (
 )
 
 const (
-	targetLockKey      = 7215004403
-	migrationAppName   = "tocatdz-migration"
-	readStatementLimit = "4s"
-	execStatementLimit = "15s"
-	targetMaxConns     = 4
-	maxDSNBytes        = 4 << 10
+	targetLockKey          = 7215004403
+	targetExecutionLockKey = targetLockKey + 1
+	migrationAppName       = "tocatdz-migration"
+	readStatementLimit     = "4s"
+	execStatementLimit     = "15s"
+	targetMaxConns         = 4
+	maxDSNBytes            = 4 << 10
 )
 
 // Targets mengelola pool per database target. DSN hanya didekripsi saat pool dibuat dan tidak pernah dicatat.
@@ -56,10 +57,11 @@ func targetConfig(dsn security.Secret) (*pgxpool.Config, error) {
 	cfg.ConnConfig.ConnectTimeout = connectTimeout
 	cfg.ConnConfig.RuntimeParams["application_name"] = "tocatdz-target"
 	cfg.ConnConfig.RuntimeParams["timezone"] = "UTC"
+	cfg.ConnConfig.RuntimeParams["search_path"] = "public, pg_catalog"
 	return cfg, nil
 }
 
-// Check dipakai saat admin menyimpan koneksi baru: DSN harus valid dan bisa dihubungi.
+// Check menolak akun berlebih dan metadata platform sebelum koneksi disimpan.
 func (t *Targets) Check(ctx context.Context, dsn security.Secret) error {
 	cfg, err := targetConfig(dsn)
 	if err != nil {
@@ -75,7 +77,16 @@ func (t *Targets) Check(ctx context.Context, dsn security.Secret) error {
 	if err := conn.Ping(ctx); err != nil {
 		return errors.Join(security.ErrInvalidInput, errors.New("target database unreachable"))
 	}
-	return nil
+	platform, err := t.platform.Acquire(ctx)
+	if err != nil {
+		return security.ErrUnavailable
+	}
+	defer platform.Release()
+	same, err := sameDatabase(ctx, conn, platform.Conn())
+	if err != nil || same {
+		return security.ErrTargetNotReady
+	}
+	return targetReady(ctx, conn, t.box)
 }
 
 func (t *Targets) pool(ctx context.Context, id security.ID) (*pgxpool.Pool, error) {
@@ -98,6 +109,18 @@ func (t *Targets) pool(ctx context.Context, id security.ID) (*pgxpool.Pool, erro
 	cfg, err := targetConfig(dsn)
 	if err != nil {
 		return nil, security.ErrUnavailable
+	}
+	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		platform, err := t.platform.Acquire(ctx)
+		if err != nil {
+			return security.ErrUnavailable
+		}
+		defer platform.Release()
+		same, err := sameDatabase(ctx, conn, platform.Conn())
+		if err != nil || same {
+			return security.ErrTargetNotReady
+		}
+		return targetReady(ctx, conn, t.box)
 	}
 	pool, err := pgxpool.NewWithConfig(context.WithoutCancel(ctx), cfg)
 	if err != nil {
@@ -410,7 +433,7 @@ func quoted(schema, table string) (string, error) {
 	return s + "." + t, nil
 }
 
-// Lock diambil di database target itu sendiri, jadi dua entri koneksi yang menunjuk database fisik yang sama tetap saling menunggu.
+// Lock dan transaksi memakai satu koneksi target supaya alias tetap antre tanpa menghabiskan pool.
 func (t *Targets) WithDatabaseLock(ctx context.Context, id security.ID, run func(context.Context, migration.LockedTarget) error) error {
 	pool, err := t.pool(ctx, id)
 	if err != nil {
@@ -433,17 +456,29 @@ func (t *Targets) WithDatabaseLock(ctx context.Context, id security.ID, run func
 			_ = conn.Conn().Close(cleanup)
 		}
 	}()
-	return run(ctx, &lockedTarget{pool: pool})
+	if err := targetReady(ctx, conn.Conn(), t.box); err != nil {
+		return err
+	}
+	var scope string
+	if err := conn.QueryRow(ctx, "SELECT scope_id::text FROM tocatdz_internal.receipt_configuration()").Scan(&scope); err != nil {
+		return security.ErrTargetNotReady
+	}
+	return run(ctx, &lockedTarget{conn: conn, box: t.box, scope: security.ID(scope)})
 }
 
-type lockedTarget struct{ pool *pgxpool.Pool }
+type lockedTarget struct {
+	conn  *pgxpool.Conn
+	box   *SecretBox
+	scope security.ID
+}
 
 func (l *lockedTarget) Begin(ctx context.Context) (migration.Transaction, error) {
-	tx, err := l.pool.Begin(ctx)
+	tx, err := l.conn.Begin(ctx)
 	if err != nil {
 		return nil, targetError(ctx, err)
 	}
 	for _, statement := range []string{
+		"SELECT pg_catalog.pg_advisory_xact_lock(" + strconv.FormatInt(targetExecutionLockKey, 10) + ")",
 		"SET LOCAL application_name = '" + migrationAppName + "'",
 		"SET LOCAL statement_timeout = '" + execStatementLimit + "'",
 		"SET LOCAL lock_timeout = '5s'",
@@ -453,31 +488,27 @@ func (l *lockedTarget) Begin(ctx context.Context) (migration.Transaction, error)
 			return nil, targetError(ctx, err)
 		}
 	}
-	return &targetTx{tx: tx}, nil
+	return &targetTx{tx: tx, box: l.box, scope: l.scope}, nil
 }
-
-const receiptTable = "tocatdz_internal.migration_receipts"
 
 // Quiescent hanya benar jika tidak ada transaksi migration lain yang masih hidup di target; kalau ada, hasilnya belum bisa dipastikan.
 func (l *lockedTarget) LookupReceipt(ctx context.Context, key migration.ExecutionKey) (migration.ReceiptLookup, error) {
 	var lookup migration.ReceiptLookup
-	var busy int
-	if err := l.pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()
-		AND application_name = $1 AND state <> 'idle' AND pid <> pg_backend_pid()`, migrationAppName).Scan(&busy); err != nil {
+	tx, err := l.conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if err != nil {
 		return lookup, targetError(ctx, err)
 	}
-	lookup.Quiescent = busy == 0
-	var exists bool
-	if err := l.pool.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", receiptTable).Scan(&exists); err != nil {
+	defer tx.Rollback(context.WithoutCancel(ctx))
+	if err := tx.QueryRow(ctx, "SELECT pg_catalog.pg_try_advisory_xact_lock($1)", int64(targetExecutionLockKey)).Scan(&lookup.Quiescent); err != nil {
 		return lookup, targetError(ctx, err)
 	}
-	if !exists {
+	if !lookup.Quiescent {
 		return lookup, nil
 	}
 	var database, migrationID, execution string
 	var version int64
 	var checksum []byte
-	err := l.pool.QueryRow(ctx, "SELECT database_id::text, migration_id::text, execution_id::text, version, checksum FROM "+receiptTable+" WHERE execution_id = $1",
+	err = tx.QueryRow(ctx, "SELECT database_id::text, migration_id::text, execution_id::text, version, checksum FROM tocatdz_internal.lookup_receipt($1)",
 		string(key.ExecutionID)).Scan(&database, &migrationID, &execution, &version, &checksum)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return lookup, nil
@@ -491,7 +522,11 @@ func (l *lockedTarget) LookupReceipt(ctx context.Context, key migration.Executio
 	return lookup, nil
 }
 
-type targetTx struct{ tx pgx.Tx }
+type targetTx struct {
+	tx    pgx.Tx
+	box   *SecretBox
+	scope security.ID
+}
 
 // SQL migration dikirim tanpa parameter sehingga pgx memakai simple protocol dan beberapa statement bisa jalan dalam satu transaksi.
 func (t *targetTx) Execute(ctx context.Context, sql security.Secret) error {
@@ -503,17 +538,8 @@ func (t *targetTx) Execute(ctx context.Context, sql security.Secret) error {
 
 func (t *targetTx) WriteReceipt(ctx context.Context, receipt migration.Receipt) error {
 	key := receipt.Key
-	for _, statement := range []string{
-		"CREATE SCHEMA IF NOT EXISTS tocatdz_internal",
-		`CREATE TABLE IF NOT EXISTS ` + receiptTable + ` (execution_id uuid PRIMARY KEY, database_id uuid NOT NULL, migration_id uuid NOT NULL,
-			version bigint NOT NULL, checksum bytea NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now())`,
-	} {
-		if _, err := t.tx.Exec(ctx, statement); err != nil {
-			return security.ErrUnavailable
-		}
-	}
-	_, err := t.tx.Exec(ctx, "INSERT INTO "+receiptTable+" (execution_id, database_id, migration_id, version, checksum) VALUES ($1, $2, $3, $4, $5)",
-		string(key.ExecutionID), string(key.DatabaseID), string(key.MigrationID), key.Version, key.Checksum[:])
+	_, err := t.tx.Exec(ctx, "SELECT tocatdz_internal.write_receipt($1,$2,$3,$4,$5,$6)",
+		string(key.DatabaseID), string(key.MigrationID), string(key.ExecutionID), key.Version, key.Checksum[:], t.box.receiptProof(key, t.scope))
 	if err != nil {
 		return security.ErrUnavailable
 	}

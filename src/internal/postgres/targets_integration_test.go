@@ -45,7 +45,11 @@ func newTargetFixture(t *testing.T) *targetFixtureEnv {
 		t.Fatal(err)
 	}
 	database := newID(t)
-	sealed, err := box.Seal(database, security.NewSecret(dsn))
+	runtimeDSN, err := PrepareManagedTarget(context.Background(), platform, security.NewSecret(dsn), box)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := box.Seal(database, runtimeDSN)
 	if err != nil {
 		t.Fatal(err)
 	}

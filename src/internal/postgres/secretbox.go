@@ -3,7 +3,9 @@ package postgres
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"io"
 
@@ -14,8 +16,9 @@ const secretBoxVersion byte = 1
 
 // SecretBox mengenkripsi connection string database target dengan AES-256-GCM; AAD mengikat ciphertext ke ID database.
 type SecretBox struct {
-	aead    cipher.AEAD
-	entropy io.Reader
+	aead       cipher.AEAD
+	entropy    io.Reader
+	receiptKey security.Secret
 }
 
 func NewSecretBox(key security.Secret) (*SecretBox, error) {
@@ -33,7 +36,9 @@ func NewSecretBox(key security.Secret) (*SecretBox, error) {
 	if err != nil {
 		return nil, security.ErrUnavailable
 	}
-	return &SecretBox{aead: aead, entropy: rand.Reader}, nil
+	mac := hmac.New(sha256.New, raw)
+	_, _ = mac.Write([]byte("tocatdz/receipt/key/v1"))
+	return &SecretBox{aead: aead, entropy: rand.Reader, receiptKey: security.NewSecret(string(mac.Sum(nil)))}, nil
 }
 
 func (b *SecretBox) Seal(id security.ID, plaintext security.Secret) ([]byte, error) {
