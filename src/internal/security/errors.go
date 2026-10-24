@@ -4,6 +4,7 @@ import "errors"
 
 var (
 	ErrInvalidInput            = errors.New("invalid input")
+	ErrTargetNotReady          = errors.Join(errors.New("target requires restricted role and protected receipts"), ErrInvalidInput)
 	ErrInvalidCredentials      = errors.New("invalid credentials")
 	ErrUnauthenticated         = errors.New("authentication required")
 	ErrForbidden               = errors.New("access denied")

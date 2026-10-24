@@ -3,61 +3,20 @@ package postgres
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
-	"net/url"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/testutil/pgtest"
 )
-
-// TEST_DATABASE_URL menunjuk server PostgreSQL khusus test (mis. postgres://postgres@localhost:55432/postgres).
-// Setiap test membuat database baru dan menghapusnya; database milik developer tidak pernah disentuh.
-func testServer(t *testing.T) *url.URL {
-	t.Helper()
-	raw := os.Getenv("TEST_DATABASE_URL")
-	if raw == "" {
-		t.Skip("TEST_DATABASE_URL tidak diset; integration test PostgreSQL dilewati")
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		t.Fatal("TEST_DATABASE_URL tidak valid")
-	}
-	return parsed
-}
 
 func createDatabase(t *testing.T) string {
 	t.Helper()
-	server := testServer(t)
-	suffix := make([]byte, 6)
-	_, _ = rand.Read(suffix)
-	name := "tocatdz_test_" + hex.EncodeToString(suffix)
-	admin, err := pgx.Connect(context.Background(), server.String())
-	if err != nil {
-		t.Fatal("cannot connect to TEST_DATABASE_URL")
-	}
-	defer admin.Close(context.Background())
-	if _, err := admin.Exec(context.Background(), "CREATE DATABASE "+name); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		conn, err := pgx.Connect(context.Background(), server.String())
-		if err != nil {
-			return
-		}
-		defer conn.Close(context.Background())
-		_, _ = conn.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
-	})
-	target := *server
-	target.Path = "/" + name
-	return target.String()
+	return pgtest.Database(t, "TEST_DATABASE_URL")
 }
 
 func testPlatform(t *testing.T) *pgxpool.Pool {
