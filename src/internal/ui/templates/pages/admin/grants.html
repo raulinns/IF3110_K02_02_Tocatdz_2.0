@@ -1,1 +1,58 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}
+<section>
+	<h1>Akses database</h1>
+	{{template "admin-nav" .Section}}
+	{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
+	<p class="lead">Akses diberikan ke group, bukan langsung ke user. Jika user ada di beberapa group, akses tertinggi untuk database yang sama yang berlaku.</p>
+	{{with .Data}}
+	<div class="table-wrap">
+		<table class="table">
+			<thead><tr><th scope="col">Group</th><th scope="col">Database</th><th scope="col">Akses</th><th scope="col">Tindakan</th></tr></thead>
+			<tbody>
+				{{range .Grants}}
+				<tr>
+					<td>{{.GroupName}}</td>
+					<td class="mono">{{.DatabaseName}}</td>
+					<td>{{.AccessLabel}}</td>
+					<td>
+						<form method="post" action="/admin/grants/revoke">
+							<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+							<input type="hidden" name="group_id" value="{{.GroupID}}">
+							<input type="hidden" name="database_id" value="{{.DatabaseID}}">
+							<button type="submit" class="button button-ghost">Cabut</button>
+						</form>
+					</td>
+				</tr>
+				{{else}}
+				<tr><td colspan="4">Belum ada akses yang diberikan.</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	<h2>Beri atau ubah akses</h2>
+	<form method="post" action="/admin/grants" class="form narrow">
+		<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+		<div class="field">
+			<label for="grant-group">Group</label>
+			<select id="grant-group" name="group_id" required>
+				{{range .Groups}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+			</select>
+		</div>
+		<div class="field">
+			<label for="grant-database">Database</label>
+			<select id="grant-database" name="database_id" required>
+				{{range .Connections}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+			</select>
+		</div>
+		<div class="field">
+			<label for="grant-access">Level akses</label>
+			<select id="grant-access" name="access" required>
+				<option value="view_only">Lihat saja</option>
+				<option value="view_edit">Lihat + ubah (migration)</option>
+			</select>
+		</div>
+		<button type="submit" class="button button-primary">Simpan akses</button>
+	</form>
+	{{end}}
+</section>
+{{end}}{{end}}
