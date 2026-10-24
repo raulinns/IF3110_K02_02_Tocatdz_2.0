@@ -6,7 +6,7 @@ Alur yang didukung: login → akses lewat group → pilih database → lihat sch
 
 ## Prasyarat
 
-- Go 1.27 atau lebih baru
+- Go 1.27.3 atau lebih baru
 - PostgreSQL 17/18 (lewat Docker atau terpasang lokal)
 
 ## Menjalankan secara lokal
@@ -71,7 +71,44 @@ Setiap test membuat database `tocatdz_test_*`/`tocatdz_e2e_*` sendiri lalu mengh
 | Koneksi database target | Connection string dienkripsi AES-256-GCM (`CONNECTION_ENCRYPTION_KEY`) dan tidak pernah ditampilkan ulang |
 | Migration | Validasi SQL dengan parser PostgreSQL; eksekusi dalam satu transaction (commit/rollback); riwayat linear per database dengan versi monoton; riwayat yang sudah dieksekusi tidak bisa diubah |
 
-Detail kontrak keamanan: `security-contracts.md`. Catatan integrasi per anggota: `CATATAN-44.md`, `CATATAN-56.md`, dan `NOTE.md`.
+Kontrak keamanan dan catatan audit dibagikan terpisah untuk koordinasi kelompok; signature API pada kode Go menjadi acuan implementasi.
+
+## Integrasi database-foundation
+
+`cmd/server` dan `cmd/seed` memakai schema aplikasi di `internal/postgres/schema`.
+Startup server merakit UI, auth/session, admin, explorer, migration, dan worker
+recovery melalui `bootstrap.Build`; pool PostgreSQL memakai fondasi `platformdb.Open`.
+Jangan mengganti startup ini dengan `platformdb.OpenMigrated`, karena fungsi itu
+masih menerapkan schema foundation awal untuk modul SQLC.
+
+Schema foundation (`user_groups`, `group_database_access`, `migration_history`)
+dan schema aplikasi (`group_memberships`, `group_database_grants`, `migrations`)
+memiliki kontrak yang berbeda. Kedua migrator mendeteksi schema yang tidak sesuai
+dan menolak perubahan. Data foundation yang sudah ada memerlukan migrasi data
+eksplisit; tidak ada penghapusan atau konversi otomatis. Gunakan database platform
+baru untuk menjalankan aplikasi jika sebelumnya hanya memakai schema foundation.
+
+Registry/driver dan reader MySQL tersedia pada paket foundation, tetapi UI admin
+serta executor aplikasi saat ini tetap PostgreSQL. Ini belum merupakan bonus
+MySQL lengkap. Schema diff/generation dan EXPLAIN/ANALYZE juga belum tersedia.
+
+Receipt migration saat ini dibuat oleh role koneksi target yang sama dengan
+eksekusi SQL. Pemisahan privilege/role receipt masih perlu dikerjakan sebelum
+menganggap proteksi receipt memenuhi seluruh kontrak hardening; parser SQL
+bukan pengganti isolasi privilege database.
+
+Test PostgreSQL membuat database sementara per kasus, termasuk test foundation,
+sehingga schema kedua jalur tidak bercampur. Aktifkan `TEST_DATABASE_URL` untuk
+test repository dan end-to-end aplikasi; `TEST_POSTGRES_TARGET_DSN` mengaktifkan
+test reader foundation, dan `TEST_MYSQL_TARGET_DSN` hanya untuk target MySQL test.
+
+Contoh PowerShell setelah server PostgreSQL test tersedia:
+
+```powershell
+$env:TEST_DATABASE_URL = 'postgres://app:app@localhost:5433/postgres?sslmode=disable'
+$env:TEST_POSTGRES_TARGET_DSN = $env:TEST_DATABASE_URL
+go test -race -tags=argon2integration -count=1 ./...
+```
 
 ## Struktur
 

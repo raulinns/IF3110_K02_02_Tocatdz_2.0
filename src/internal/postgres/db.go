@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/platformdb"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -28,22 +29,8 @@ const (
 )
 
 func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
-	cfg, err := pgxpool.ParseConfig(url)
+	pool, err := platformdb.Open(ctx, platformdb.Config{URL: url})
 	if err != nil {
-		return nil, errors.New("invalid DATABASE_URL")
-	}
-	cfg.MaxConns = 10
-	cfg.ConnConfig.ConnectTimeout = connectTimeout
-	cfg.ConnConfig.RuntimeParams["application_name"] = "tocatdz-platform"
-	cfg.ConnConfig.RuntimeParams["timezone"] = "UTC"
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		return nil, errors.New("cannot create platform database pool")
-	}
-	pingCtx, cancel := context.WithTimeout(ctx, connectTimeout)
-	defer cancel()
-	if err := pool.Ping(pingCtx); err != nil {
-		pool.Close()
 		return nil, errors.New("platform database unavailable")
 	}
 	return pool, nil
@@ -51,6 +38,13 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 
 // Migrate menerapkan file schema/*.sql berurutan; advisory lock mencegah dua instance menjalankannya bersamaan.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	var legacy bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'managed_databases' AND column_name = 'connection_secret')`).Scan(&legacy); err != nil {
+		return security.ErrUnavailable
+	}
+	if legacy {
+		return errors.New("legacy database-foundation schema detected; use a separate application database or an explicit data migration")
+	}
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("migrate schema: %w", security.ErrUnavailable)
