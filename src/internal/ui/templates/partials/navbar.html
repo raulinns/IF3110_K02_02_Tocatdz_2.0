@@ -1,1 +1,16 @@
-{{define "navbar"}}{{end}}
+{{define "navbar"}}{{if .SignedIn}}
+<header class="topbar">
+	<a class="brand" href="/databases">Tocatdz</a>
+	<nav class="topbar-nav" aria-label="Navigasi utama">
+		<a href="/databases">Database</a>
+	</nav>
+	<div class="topbar-user">
+		<span class="mono">{{.Identity.Username}}</span>
+		{{if .Identity.PlatformAdmin}}<span class="tag">Admin</span>{{end}}
+		<form method="post" action="/logout">
+			<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+			<button type="submit" class="button button-ghost">Keluar</button>
+		</form>
+	</div>
+</header>
+{{end}}{{end}}
