@@ -1,1 +1,27 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}{{$view := .}}
+<section>
+	<p class="breadcrumb"><a href="/databases">Database</a> / <span class="mono">{{if .Overview.DatabaseName}}{{.Overview.DatabaseName}}{{else}}{{.DatabaseID}}{{end}}</span></p>
+	<h1>Schema</h1>
+	{{template "database-tabs" .Tabs}}
+	{{range .Overview.Schemas}}{{$schema := .Name}}
+	<h2 class="mono">{{.Name}}</h2>
+	{{if .Tables}}
+	<div class="table-wrap">
+		<table class="table">
+			<thead><tr><th scope="col">Nama</th><th scope="col">Jenis</th></tr></thead>
+			<tbody>
+				{{range .Tables}}
+				<tr>
+					<td class="mono"><a href="{{$view.TableHref $schema .Name}}">{{.Name}}</a></td>
+					<td>{{.Kind}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{else}}<p class="lead">Schema ini belum memiliki table.</p>{{end}}
+	{{else}}
+	<p class="lead">Database ini belum memiliki schema yang dapat ditampilkan.</p>
+	{{end}}
+</section>
+{{end}}{{end}}

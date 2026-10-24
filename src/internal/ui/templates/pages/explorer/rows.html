@@ -1,1 +1,27 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}
+<section>
+	<p class="breadcrumb"><a href="/databases">Database</a> / <a href="{{.Tabs.SchemaHref}}">Schema</a> / <a class="mono" href="{{.TableHref}}">{{.Query.Schema}}.{{.Query.Table}}</a></p>
+	<h1>Data <span class="mono">{{.Query.Schema}}.{{.Query.Table}}</span></h1>
+	{{template "database-tabs" .Tabs}}
+	{{if eq .Page.Order "best_effort"}}<p class="lead">Tabel ini tidak punya urutan unik; isi halaman bisa bergeser saat data berubah.</p>{{end}}
+	{{if .Page.Rows}}
+	<div class="table-wrap">
+		<table class="table table-data">
+			<thead><tr>{{range .Page.Columns}}<th scope="col" class="mono">{{.}}</th>{{end}}</tr></thead>
+			<tbody>
+				{{range .Page.Rows}}
+				<tr>{{range .}}<td class="mono">{{if .Null}}<span class="null">NULL</span>{{else}}{{.Value}}{{if eq .Encoding "hex"}} <span class="tag">hex</span>{{end}}{{if .Truncated}} <span class="tag">dipotong</span>{{end}}{{end}}</td>{{end}}</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{else}}
+	<p class="lead">Tidak ada baris di halaman ini.</p>
+	{{end}}
+	<nav class="pagination" aria-label="Halaman data">
+		{{with .PrevHref}}<a class="button button-ghost" href="{{.}}">Sebelumnya</a>{{end}}
+		<span>Halaman {{.Query.Page}} · {{.Query.Limit}} baris per halaman</span>
+		{{with .NextHref}}<a class="button button-ghost" href="{{.}}">Berikutnya</a>{{end}}
+	</nav>
+</section>
+{{end}}{{end}}

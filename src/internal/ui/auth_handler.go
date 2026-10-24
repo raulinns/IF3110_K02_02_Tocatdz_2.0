@@ -8,10 +8,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
-type AuthMiddleware interface {
-	security.Middleware
-	LogoutHandler() http.Handler
-}
+type AuthMiddleware = security.Middleware
 
 type AuthUI struct {
 	auth     security.Authenticator

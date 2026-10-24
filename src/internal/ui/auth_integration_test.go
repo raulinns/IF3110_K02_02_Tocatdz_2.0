@@ -129,7 +129,6 @@ func (s *memoryStore) Revoke(_ context.Context, id security.ID, now time.Time) e
 	return nil
 }
 
-
 func testKeyDeriver(password, salt []byte, _, _ uint32, _ uint8, _ uint32) []byte {
 	key := sha256.Sum256(append(append([]byte(nil), password...), salt...))
 	return key[:]
@@ -139,7 +138,7 @@ func testKey(fill byte) security.Secret {
 	return security.NewSecret(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{fill}, 32)))
 }
 
-func newIntegrationServer(t *testing.T) *http.ServeMux {
+func newIntegrationSecurity(t *testing.T) (security.HTTPMiddlewareConfig, *memoryStore) {
 	t.Helper()
 	ctx := context.Background()
 	hasher, err := security.NewArgon2idHasher(testKeyDeriver)
@@ -179,24 +178,7 @@ func newIntegrationServer(t *testing.T) *http.ServeMux {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err := security.NewHTTPMiddleware(security.HTTPMiddlewareConfig{Auth: auth, Logout: auth, CSRF: csrf, Cookies: cookies, Throttle: throttle})
-	if err != nil {
-		t.Fatal(err)
-	}
-	renderer, err := NewRenderer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	authUI, err := NewAuthUI(auth, guard, cookies, renderer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mux := http.NewServeMux()
-	authUI.RegisterRoutes(mux)
-	mux.Handle("GET /databases", guard.Protected(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = renderer.Render(w, r, http.StatusOK, "databases", Page{Title: "Database"})
-	})))
-	return mux
+	return security.HTTPMiddlewareConfig{Auth: auth, Logout: auth, CSRF: csrf, Cookies: cookies, Throttle: throttle}, store
 }
 
 func browserRequest(method, target, body string, cookie security.Secret) *http.Request {

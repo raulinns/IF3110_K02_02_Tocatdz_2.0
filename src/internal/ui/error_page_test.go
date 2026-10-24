@@ -17,6 +17,8 @@ func TestErrorResponseMatchesSecurityMapping(t *testing.T) {
 		security.ErrInvalidInput, security.ErrInvalidCredentials, security.ErrUnauthenticated,
 		security.ErrForbidden, security.ErrCSRF, security.ErrNotFound, security.ErrConflict,
 		security.ErrRateLimited, security.ErrUnavailable, context.Canceled, context.DeadlineExceeded,
+		security.ErrResultTooLarge, security.ErrMethodNotAllowed, security.ErrPasswordTooShort,
+		security.ErrPasswordTooLong, security.ErrPasswordInvalidEncoding,
 		fmt.Errorf("load database: %w", security.ErrForbidden), errors.New("unexpected"),
 	} {
 		w := httptest.NewRecorder()
