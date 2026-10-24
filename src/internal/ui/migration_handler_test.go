@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -26,10 +27,10 @@ type fakeMigrations struct {
 	err         error
 }
 
-func (m *fakeMigrations) History(_ context.Context, request DatabaseRequest) ([]MigrationSummary, error) {
+func (m *fakeMigrations) History(_ context.Context, request DatabaseRequest, query migration.HistoryQuery) (MigrationHistoryPage, error) {
 	m.calls++
 	m.request = request
-	return m.history, m.err
+	return MigrationHistoryPage{Items: m.history, Page: query.Page, Limit: query.Limit}, m.err
 }
 
 func (m *fakeMigrations) Migration(_ context.Context, request DatabaseRequest, id security.ID) (MigrationDetail, error) {

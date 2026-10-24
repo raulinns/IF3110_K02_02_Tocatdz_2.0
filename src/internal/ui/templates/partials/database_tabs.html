@@ -1,6 +1,6 @@
 {{define "database-tabs"}}
 <nav class="tabs" aria-label="Bagian database">
 	<a href="{{.SchemaHref}}"{{if eq .Active "schema"}} aria-current="page"{{end}}>Schema</a>
-	<a href="{{.MigrationsHref}}"{{if eq .Active "migrations"}} aria-current="page"{{end}}>Migration</a>
+	{{if feature "migrations"}}<a href="{{.MigrationsHref}}"{{if eq .Active "migrations"}} aria-current="page"{{end}}>Migration</a>{{end}}
 </nav>
 {{end}}

@@ -8,9 +8,11 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
+type AuthMiddleware = security.Middleware
+
 type AuthUI struct {
 	auth     security.Authenticator
-	guard    security.Middleware
+	guard    AuthMiddleware
 	cookies  *security.SessionCookies
 	renderer *Renderer
 }
@@ -34,7 +36,7 @@ func missingDependency(value any) bool {
 	return false
 }
 
-func NewAuthUI(auth security.Authenticator, guard security.Middleware, cookies *security.SessionCookies, renderer *Renderer) (*AuthUI, error) {
+func NewAuthUI(auth security.Authenticator, guard AuthMiddleware, cookies *security.SessionCookies, renderer *Renderer) (*AuthUI, error) {
 	for _, dependency := range []any{auth, guard, cookies, renderer} {
 		if missingDependency(dependency) {
 			return nil, security.ErrInvalidInput
@@ -75,7 +77,7 @@ func (ui *AuthUI) login(w http.ResponseWriter, r *http.Request) {
 
 // password tidak diisi ulang ke form
 func (ui *AuthUI) loginFailed(w http.ResponseWriter, r *http.Request, err error, username string) {
-	status, message := security.HTTPStatus(err)
+	status, message := errorResponse(err)
 	if errors.Is(err, security.ErrRateLimited) {
 		w.Header().Set("Retry-After", "60")
 	}

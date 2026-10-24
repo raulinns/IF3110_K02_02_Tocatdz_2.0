@@ -25,11 +25,11 @@ type Page struct {
 	Content  any
 	Identity security.Identity
 	SignedIn bool
-	csrf     security.Secret
+	CSRF     security.Secret // Diekspor agar fmt manggil Secret.Format dan tidak cetak isi token
 }
 
 // Token CSRF hanya dibuka saat dimasukkan ke hidden field form
-func (p Page) CSRFToken() string { return p.csrf.Reveal() }
+func (p Page) CSRFToken() string { return p.CSRF.Reveal() }
 
 type viewer struct {
 	identity security.Identity
@@ -43,21 +43,40 @@ func viewerFromContext(ctx context.Context) viewer {
 	return viewer{identity: identity, csrf: csrf, signedIn: signedIn}
 }
 
+// Fitur yang servicenya belum tersedia tidak didaftarkan, jadi link-nya ikut disembunyikan
+type Features struct {
+	Migrations bool
+	Admin      bool
+}
+
 type Renderer struct {
-	pages  map[string]*template.Template
-	viewer func(context.Context) viewer
+	pages    map[string]*template.Template
+	viewer   func(context.Context) viewer
+	features Features
+}
+
+func (r *Renderer) feature(name string) bool {
+	switch name {
+	case "migrations":
+		return r.features.Migrations
+	case "admin":
+		return r.features.Admin
+	}
+	return false
 }
 
 func NewRenderer() (*Renderer, error) { return newRenderer(assets) }
 
 func newRenderer(files fs.FS) (*Renderer, error) {
+	renderer := &Renderer{viewer: viewerFromContext}
+	funcs := template.FuncMap{"feature": renderer.feature}
 	pages := map[string]*template.Template{}
 	err := fs.WalkDir(files, pagesDir, func(name string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || path.Ext(name) != ".html" {
 			return err
 		}
 		page := strings.TrimSuffix(strings.TrimPrefix(name, pagesDir+"/"), ".html")
-		tmpl, err := template.New(page).ParseFS(files, "templates/layouts/*.html", "templates/partials/*.html", name)
+		tmpl, err := template.New(page).Funcs(funcs).ParseFS(files, "templates/layouts/*.html", "templates/partials/*.html", name)
 		if err != nil {
 			return err
 		}
@@ -73,7 +92,8 @@ func newRenderer(files fs.FS) (*Renderer, error) {
 	if len(pages) == 0 {
 		return nil, ErrTemplateNotFound
 	}
-	return &Renderer{pages: pages, viewer: viewerFromContext}, nil
+	renderer.pages = pages
+	return renderer, nil
 }
 
 // Identity dan CSRF diambil dari context middleware
@@ -84,7 +104,7 @@ func (r *Renderer) Render(w http.ResponseWriter, req *http.Request, status int, 
 		return ErrTemplateNotFound
 	}
 	current := r.viewer(req.Context())
-	page.Identity, page.SignedIn, page.csrf = current.identity, current.signedIn, current.csrf
+	page.Identity, page.SignedIn, page.CSRF = current.identity, current.signedIn, current.csrf
 	var body bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&body, layoutTemplate, page); err != nil {
 		renderFailure(w)

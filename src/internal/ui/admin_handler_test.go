@@ -156,7 +156,7 @@ func TestNewAdminUIRejectsMissingDependencies(t *testing.T) {
 func TestAdminRoutesRejectNonAdminWithoutSideEffects(t *testing.T) {
 	for _, route := range adminRoutes() {
 		admin := &fakeAdmin{}
-		w := serve(testAdminUI(t, admin, &fakeAuthorizer{adminErr: security.ErrForbidden}), protectedRequest(route.method, route.target, route.form))
+		w := serve(testAdminUI(t, admin, &fakeAuthorizer{adminErr: security.ErrForbidden}), formRequest(route.method, route.target, route.form))
 		if w.Code != http.StatusForbidden || len(admin.calls) != 0 {
 			t.Fatal("non-admin reached admin service: " + route.method + " " + route.target)
 		}
@@ -167,7 +167,7 @@ func TestAdminRoutesSucceedForAdmin(t *testing.T) {
 	for _, route := range adminRoutes() {
 		admin := &fakeAdmin{}
 		authorizer := &fakeAuthorizer{}
-		w := serve(testAdminUI(t, admin, authorizer), protectedRequest(route.method, route.target, route.form))
+		w := serve(testAdminUI(t, admin, authorizer), formRequest(route.method, route.target, route.form))
 		want := http.StatusOK
 		if route.method == "POST" || route.target == "/admin" {
 			want = http.StatusSeeOther
@@ -191,7 +191,7 @@ func TestAdminPagesRenderData(t *testing.T) {
 		{"/admin/connections", []string{"inventaris", "tidak akan ditampilkan lagi"}},
 		{"/admin/grants", []string{"tim-data", "inventaris", "Lihat &#43; ubah", `value="` + string(testGroupID) + `"`}},
 	} {
-		w := serve(testAdminUI(t, &fakeAdmin{}, &fakeAuthorizer{}), protectedRequest("GET", scenario.target, nil))
+		w := serve(testAdminUI(t, &fakeAdmin{}, &fakeAuthorizer{}), formRequest("GET", scenario.target, nil))
 		for _, want := range scenario.want {
 			if !strings.Contains(w.Body.String(), want) {
 				t.Fatal(scenario.target + " missing: " + want)
@@ -202,12 +202,12 @@ func TestAdminPagesRenderData(t *testing.T) {
 
 func TestCreateUserNormalizesUsernameAndHidesPassword(t *testing.T) {
 	admin := &fakeAdmin{}
-	w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), protectedRequest("POST", "/admin/users", url.Values{"username": {"  Siti "}, "password": {testPassword}, "platform_admin": {"true"}}))
+	w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), formRequest("POST", "/admin/users", url.Values{"username": {"  Siti "}, "password": {testPassword}, "platform_admin": {"true"}}))
 	if w.Code != http.StatusSeeOther || admin.newUser.Username != "siti" || admin.newUser.Password.Reveal() != testPassword || !admin.newUser.PlatformAdmin {
 		t.Fatal("new user not passed correctly")
 	}
 	admin = &fakeAdmin{err: security.ErrInvalidInput}
-	w = serve(testAdminUI(t, admin, &fakeAuthorizer{}), protectedRequest("POST", "/admin/users", url.Values{"username": {"siti"}, "password": {testPassword}}))
+	w = serve(testAdminUI(t, admin, &fakeAuthorizer{}), formRequest("POST", "/admin/users", url.Values{"username": {"siti"}, "password": {testPassword}}))
 	if w.Code != http.StatusBadRequest || strings.Contains(w.Body.String(), testPassword) || !strings.Contains(w.Body.String(), "Input tidak valid") {
 		t.Fatal("rejected user form leaked password or hid error")
 	}
@@ -216,7 +216,7 @@ func TestCreateUserNormalizesUsernameAndHidesPassword(t *testing.T) {
 func TestCreateConnectionKeepsDSNSecret(t *testing.T) {
 	dsn := "postgres://admin:canary-secret@db:5432/app"
 	admin := &fakeAdmin{err: security.ErrConflict}
-	w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), protectedRequest("POST", "/admin/connections", url.Values{"name": {"app"}, "dsn": {dsn}}))
+	w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), formRequest("POST", "/admin/connections", url.Values{"name": {"app"}, "dsn": {dsn}}))
 	if admin.conn.DSN.Reveal() != dsn || admin.conn.Name != "app" {
 		t.Fatal("connection not passed to service")
 	}
@@ -243,7 +243,7 @@ func TestAdminFormsValidateBeforeCallingService(t *testing.T) {
 		{"/admin/grants", url.Values{"group_id": {string(testGroupID)}, "database_id": {string(testDatabaseA)}, "access": {"view_only"}, "user_id": {string(testUserID)}}},
 	} {
 		admin := &fakeAdmin{}
-		w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), protectedRequest("POST", route.target, route.form))
+		w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), formRequest("POST", route.target, route.form))
 		for _, call := range admin.calls {
 			if call != "users" && call != "groups" && call != "connections" && call != "grants" {
 				t.Fatal("invalid form reached mutation: " + route.target)
@@ -258,22 +258,22 @@ func TestAdminFormsValidateBeforeCallingService(t *testing.T) {
 func TestAdminMutationsPassParsedValues(t *testing.T) {
 	admin := &fakeAdmin{}
 	mux := testAdminUI(t, admin, &fakeAuthorizer{})
-	serve(mux, protectedRequest("POST", "/admin/users/"+string(testUserID)+"/active", url.Values{"active": {"false"}}))
+	serve(mux, formRequest("POST", "/admin/users/"+string(testUserID)+"/active", url.Values{"active": {"false"}}))
 	if admin.userID != testUserID || admin.active {
 		t.Fatal("user status not passed")
 	}
-	serve(mux, protectedRequest("POST", memberPath, url.Values{"username": {" SITI "}}))
+	serve(mux, formRequest("POST", memberPath, url.Values{"username": {" SITI "}}))
 	if admin.groupID != testGroupID || admin.username != "siti" {
 		t.Fatal("member not passed")
 	}
-	serve(mux, protectedRequest("POST", "/admin/grants", url.Values{"group_id": {string(testGroupID)}, "database_id": {string(testDatabaseA)}, "access": {"view_edit"}}))
+	serve(mux, formRequest("POST", "/admin/grants", url.Values{"group_id": {string(testGroupID)}, "database_id": {string(testDatabaseA)}, "access": {"view_edit"}}))
 	if admin.database != testDatabaseA || admin.access != security.AccessViewEdit {
 		t.Fatal("grant not passed")
 	}
 }
 
 func TestAdminUnexpectedErrorIsSanitized(t *testing.T) {
-	w := serve(testAdminUI(t, &fakeAdmin{err: errors.New("duplicate key canary-secret")}, &fakeAuthorizer{}), protectedRequest("GET", "/admin/users", nil))
+	w := serve(testAdminUI(t, &fakeAdmin{err: errors.New("duplicate key canary-secret")}, &fakeAuthorizer{}), formRequest("GET", "/admin/users", nil))
 	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "canary-secret") {
 		t.Fatal("unexpected admin error leaked")
 	}
@@ -289,7 +289,7 @@ func TestCreateUserExplainsPasswordPolicyBeforeService(t *testing.T) {
 		{strings.Repeat("x", security.MaxPasswordBytes+1), "Password maksimal"},
 	} {
 		admin := &fakeAdmin{}
-		w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), protectedRequest("POST", "/admin/users", url.Values{"username": {"siti"}, "password": {scenario.password}}))
+		w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), formRequest("POST", "/admin/users", url.Values{"username": {"siti"}, "password": {scenario.password}}))
 		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), scenario.message) {
 			t.Fatal("password policy reason not shown: " + scenario.message)
 		}

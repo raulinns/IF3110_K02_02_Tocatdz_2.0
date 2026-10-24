@@ -29,6 +29,8 @@ func HTTPStatus(err error) (int, string) {
 		return http.StatusNotFound, "Data tidak ditemukan"
 	case errors.Is(err, ErrMethodNotAllowed):
 		return http.StatusMethodNotAllowed, "Metode tidak diizinkan"
+	case errors.Is(err, ErrResultTooLarge):
+		return http.StatusUnprocessableEntity, "Hasil terlalu besar, kurangi jumlah data yang ditampilkan"
 	case errors.Is(err, ErrConflict):
 		return http.StatusConflict, "Data berubah, silakan muat ulang"
 	case errors.Is(err, ErrRateLimited):

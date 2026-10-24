@@ -67,7 +67,7 @@ func TestRendererEscapesUntrustedContent(t *testing.T) {
 func TestRendererTakesViewerOnlyFromContext(t *testing.T) {
 	r := testRenderer(t, `{{define "content"}}{{end}}`)
 	w := httptest.NewRecorder()
-	page := Page{Identity: security.Identity{Username: "mallory"}, SignedIn: true, csrf: security.NewSecret("forged")}
+	page := Page{Identity: security.Identity{Username: "mallory"}, SignedIn: true, CSRF: security.NewSecret("forged")}
 	if err := r.Render(w, httptest.NewRequest("GET", "/", nil), http.StatusOK, "test", page); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestRendererTakesViewerOnlyFromContext(t *testing.T) {
 }
 
 func TestPageRedactsCSRFToken(t *testing.T) {
-	page := Page{csrf: security.NewSecret(testCSRF)}
+	page := Page{CSRF: security.NewSecret(testCSRF)}
 	if strings.Contains(fmt.Sprintf("%v %+v %#v", page, page, page), testCSRF) {
 		t.Fatal("CSRF token leaked through formatting")
 	}

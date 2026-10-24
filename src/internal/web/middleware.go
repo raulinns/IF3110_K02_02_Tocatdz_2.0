@@ -47,11 +47,12 @@ func requestIDMiddleware(
 				r.Context(),
 				"failed to generate request ID",
 				"method",
-				r.Method,
-				"path",
-				r.URL.Path,
+				requestMethod(r),
+				"route",
+				requestRoute(r),
 			)
 
+			w.Header().Set("Cache-Control", "no-store")
 			http.Error(
 				w,
 				http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError,
@@ -96,9 +97,9 @@ func requestLoggingMiddleware(
 			"request_id",
 			requestIDFromContext(r.Context()),
 			"method",
-			r.Method,
-			"path",
-			r.URL.Path,
+			requestMethod(r),
+			"route",
+			requestRoute(r),
 			"status",
 			statusCode,
 			"bytes",
@@ -125,11 +126,12 @@ func recoveryMiddleware(
 				"request_id",
 				requestIDFromContext(r.Context()),
 				"method",
-				r.Method,
-				"path",
-				r.URL.Path,
+				requestMethod(r),
+				"route",
+				requestRoute(r),
 			)
 
+			w.Header().Set("Cache-Control", "no-store")
 			http.Error(
 				w,
 				http.StatusText(http.StatusInternalServerError),
@@ -189,6 +191,23 @@ func generateRequestID() (string, error) {
 	}
 
 	return hex.EncodeToString(value[:]), nil
+}
+
+// Catat pola route agar nilai URL dari client tidak ikut masuk log.
+func requestRoute(r *http.Request) string {
+	if r.Pattern == "" {
+		return "[unmatched]"
+	}
+	return r.Pattern
+}
+
+func requestMethod(r *http.Request) string {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions, http.MethodConnect, http.MethodTrace:
+		return r.Method
+	default:
+		return "[other]"
+	}
 }
 
 func requestIDFromContext(ctx context.Context) string {

@@ -159,12 +159,23 @@ func TestRowsPagePaginatesAndShowsNull(t *testing.T) {
 }
 
 func TestRowsPageRejectsInvalidQueryBeforeLoading(t *testing.T) {
-	for _, query := range []string{"?limit=0", "?limit=201", "?page=0", "?page=abc", "?page=1&page=2", "?sort=email", "?limit=%zz"} {
+	for _, query := range []string{"?limit=0", "?limit=201", "?page=0", "?page=abc", "?page=1&page=2", "?sort=email", "?limit=%zz", "?page=01", "?page=20002&limit=50"} {
 		explorer := &fakeExplorer{}
 		w := serve(testExplorerUI(t, explorer, &fakeAuthorizer{}), protectedRequest("GET", rowsPath+query, nil))
 		if w.Code != http.StatusBadRequest || explorer.calls != 0 {
 			t.Fatal("invalid row query reached explorer: " + query)
 		}
+	}
+}
+
+func TestRowsNextLinkRespectsOffsetLimit(t *testing.T) {
+	view := RowsView{DatabaseID: testDatabaseA, Query: RowQuery{Schema: "public", Table: "users", Page: 20001, Limit: 50}, Page: RowPage{HasNext: true}}
+	if view.NextHref() != "" || view.PrevHref() == "" {
+		t.Fatal("pagination offered a page beyond the core offset limit")
+	}
+	view.Query.Page--
+	if view.NextHref() == "" {
+		t.Fatal("last allowed page cannot be reached")
 	}
 }
 
@@ -189,7 +200,7 @@ func TestExplorerDeniesWithoutLoading(t *testing.T) {
 		}
 	}
 	explorer := &fakeExplorer{}
-	w := serve(testExplorerUI(t, explorer, &fakeAuthorizer{}), protectedRequest("GET", "/databases/"+string(testDatabaseA)+"/tables/public/bad%0Aname", nil))
+	w := serve(testExplorerUI(t, explorer, &fakeAuthorizer{}), protectedRequest("GET", "/databases/"+string(testDatabaseA)+"/tables/public/bad%00name", nil))
 	if w.Code != http.StatusBadRequest || explorer.calls != 0 {
 		t.Fatal("invalid identifier reached explorer")
 	}

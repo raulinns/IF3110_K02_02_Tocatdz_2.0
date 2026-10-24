@@ -1,6 +1,6 @@
 {{define "content"}}{{with .Content}}{{$view := .}}
 <section>
-	<p class="breadcrumb"><a href="/databases">Database</a> / <span class="mono">{{.Overview.DatabaseName}}</span></p>
+	<p class="breadcrumb"><a href="/databases">Database</a> / <span class="mono">{{if .Overview.DatabaseName}}{{.Overview.DatabaseName}}{{else}}{{.DatabaseID}}{{end}}</span></p>
 	<h1>Schema</h1>
 	{{template "database-tabs" .Tabs}}
 	{{range .Overview.Schemas}}{{$schema := .Name}}

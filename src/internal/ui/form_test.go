@@ -21,6 +21,10 @@ func protectedRequest(method, target string, form url.Values) *http.Request {
 	return r
 }
 
+func formRequest(method, target string, form url.Values) *http.Request {
+	return protectedRequest(method, target, form)
+}
+
 func TestReadFormAcceptsOnlyExpectedSingleFields(t *testing.T) {
 	r := protectedRequest("POST", "/x", url.Values{"title": {"a"}, "csrf_token": {"t"}})
 	if values, err := readForm(r, "title", "sql"); err != nil || values.Get("title") != "a" {

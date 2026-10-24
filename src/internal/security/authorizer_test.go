@@ -92,3 +92,17 @@ func TestBackendAuthorizerRejectsUnknownActionsBeforeGrantQuery(t *testing.T) {
 		t.Fatal("missing repository accepted")
 	}
 }
+
+func TestBackendAuthorizerValidatesAuthenticationWithoutAdminOrDatabaseGrant(t *testing.T) {
+	f := newAuthFixture(t)
+	result := f.login(t)
+	authorizer, _ := NewBackendAuthorizer(f.store, f.store, f.clock, DefaultSessionPolicy())
+	if err := authorizer.RequireAuthenticated(context.Background(), result.Principal); err != nil {
+		t.Fatal(err)
+	}
+	if f.store.grantCalls != 0 {
+		t.Fatal("authentication-only validation queried database grants")
+	}
+	f.clock.add(30 * time.Minute)
+	assertAuthError(t, authorizer.RequireAuthenticated(context.Background(), result.Principal), ErrUnauthenticated)
+}

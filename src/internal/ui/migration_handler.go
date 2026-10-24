@@ -10,12 +10,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
 const (
-	maxMigrationTitleRunes = 120
-	maxMigrationSQLBytes   = 512 << 10
+	maxMigrationTitleRunes = migration.MaxTitleRunes
+	maxMigrationSQLBytes   = migration.MaxSQLBytes
 )
 
 type MigrationStatus string
@@ -37,7 +38,7 @@ func (s MigrationStatus) Label() string {
 	case StatusFailed:
 		return "Gagal (rollback)"
 	case StatusPending:
-		return "Menunggu konfirmasi"
+		return "Sedang diproses / menunggu konfirmasi"
 	}
 	return "Tidak diketahui"
 }
@@ -76,19 +77,25 @@ func timeLabel(value time.Time) string {
 
 type MigrationDetail struct {
 	MigrationSummary
-	SQL           string
+	SQL           string `json:"-"`
 	Revision      uint64
 	FailureReason string
 }
 
 type MigrationDraft struct {
 	Title string
-	SQL   string
+	SQL   string `json:"-"`
+}
+
+type MigrationHistoryPage struct {
+	Items       []MigrationSummary
+	Page, Limit int
+	HasNext     bool
 }
 
 // Implementasi wajib memeriksa bahwa migration milik database di request dan mengotorisasi ulang sebelum eksekusi
 type MigrationService interface {
-	History(ctx context.Context, request DatabaseRequest) ([]MigrationSummary, error)
+	History(ctx context.Context, request DatabaseRequest, query migration.HistoryQuery) (MigrationHistoryPage, error)
 	Migration(ctx context.Context, request DatabaseRequest, migrationID security.ID) (MigrationDetail, error)
 	CreateDraft(ctx context.Context, request DatabaseRequest, draft MigrationDraft) (security.ID, error)
 	UpdateDraft(ctx context.Context, request DatabaseRequest, migrationID security.ID, draft MigrationDraft, expectedRevision uint64) error
@@ -98,7 +105,7 @@ type MigrationService interface {
 type MigrationForm struct {
 	Action   string
 	Title    string
-	SQL      string
+	SQL      string `json:"-"`
 	Revision uint64
 	Error    string
 	Submit   string
@@ -108,6 +115,23 @@ type MigrationListView struct {
 	DatabaseID security.ID
 	Migrations []MigrationSummary
 	CanEdit    bool
+	Page       MigrationHistoryPage
+}
+
+func (v MigrationListView) historyHref(page int) string {
+	return databasePath(v.DatabaseID, "migrations") + "?" + url.Values{"page": {strconv.Itoa(page)}, "limit": {strconv.Itoa(v.Page.Limit)}}.Encode()
+}
+func (v MigrationListView) PrevHref() string {
+	if v.Page.Page <= 1 {
+		return ""
+	}
+	return v.historyHref(v.Page.Page - 1)
+}
+func (v MigrationListView) NextHref() string {
+	if !v.Page.HasNext || v.Page.Limit <= 0 || int64(v.Page.Page) > migration.MaxOffset/int64(v.Page.Limit) {
+		return ""
+	}
+	return v.historyHref(v.Page.Page + 1)
 }
 
 func (v MigrationListView) Tabs() DatabaseTabs { return databaseTabs(v.DatabaseID, "migrations") }
@@ -171,18 +195,32 @@ func (ui *MigrationUI) history(w http.ResponseWriter, r *http.Request) {
 		_ = ui.renderer.RenderError(w, r, err)
 		return
 	}
-	migrations, err := ui.migrations.History(r.Context(), request)
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, security.ErrInvalidInput)
+		return
+	}
+	query, err := migration.ParseHistoryQuery(values)
 	if err != nil {
 		_ = ui.renderer.RenderError(w, r, err)
 		return
 	}
-	for _, migration := range migrations {
+	page, err := ui.migrations.History(r.Context(), request, query)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, err)
+		return
+	}
+	if page.Page != query.Page || page.Limit != query.Limit || len(page.Items) > query.Limit {
+		_ = ui.renderer.RenderError(w, r, security.ErrUnavailable)
+		return
+	}
+	for _, migration := range page.Items {
 		if !security.ValidID(migration.ID) || !migration.Status.valid() {
 			_ = ui.renderer.RenderError(w, r, security.ErrUnavailable)
 			return
 		}
 	}
-	view := MigrationListView{DatabaseID: request.DatabaseID, Migrations: migrations, CanEdit: ui.access.Allows(r, request, security.ActionCreateMigration)}
+	view := MigrationListView{DatabaseID: request.DatabaseID, Migrations: page.Items, Page: page, CanEdit: ui.access.Allows(r, request, security.ActionCreateMigration)}
 	_ = ui.renderer.Render(w, r, http.StatusOK, "migration/list", Page{Title: "Migration", Content: view})
 }
 
@@ -218,6 +256,10 @@ func parseDraft(values url.Values) (MigrationDraft, string) {
 
 // Pesan yang bisa diperbaiki user ditampilkan di editor beserta isian SQL-nya supaya tidak hilang
 func formFailure(err error) (int, string, bool) {
+	var reason migration.SQLRejection
+	if errors.As(err, &reason) {
+		return http.StatusBadRequest, reason.Message(), true
+	}
 	for _, category := range []error{security.ErrInvalidInput, security.ErrConflict} {
 		if errors.Is(err, category) {
 			status, message := security.HTTPStatus(err)
@@ -372,8 +414,19 @@ func (ui *MigrationUI) execute(w http.ResponseWriter, r *http.Request) {
 	}
 	// Gagal di SQL dicatat sebagai status failed oleh service; error di sini berarti eksekusi tidak dimulai atau hasilnya belum pasti
 	if err := ui.migrations.Execute(r.Context(), request, migrationID, revision); err != nil {
+		if errors.Is(err, migration.ErrExecutionUncertain) {
+			_ = ui.renderer.Render(w, r, http.StatusServiceUnavailable, "migration/pending", Page{Title: "Hasil migration belum pasti", Content: MigrationPendingView{DetailHref: databasePath(request.DatabaseID, "migrations", string(migrationID))}})
+			return
+		}
+		if status, message, ok := formFailure(err); ok {
+			_ = ui.renderer.Render(w, r, status, "migration/rejected", Page{Title: "SQL migration ditolak", Content: MigrationRejectedView{DetailHref: databasePath(request.DatabaseID, "migrations", string(migrationID)), Message: message}})
+			return
+		}
 		_ = ui.renderer.RenderError(w, r, err)
 		return
 	}
 	http.Redirect(w, r, databasePath(request.DatabaseID, "migrations", string(migrationID)), http.StatusSeeOther)
 }
+
+type MigrationPendingView struct{ DetailHref string }
+type MigrationRejectedView struct{ DetailHref, Message string }

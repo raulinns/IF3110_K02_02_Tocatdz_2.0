@@ -6,13 +6,12 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
 const (
-	defaultRowLimit = 50
-	maxRowLimit     = 200
-	maxRowPage      = 1_000_000
+	defaultRowLimit = explorer.DefaultLimit
 )
 
 type SchemaOverview struct {
@@ -31,10 +30,11 @@ type TableSummary struct {
 }
 
 type ColumnInfo struct {
-	Name     string
-	Type     string
-	Nullable bool
-	Default  string
+	Name       string
+	Type       string
+	Nullable   bool
+	Default    string
+	HasDefault bool
 }
 
 type ConstraintInfo struct {
@@ -47,6 +47,7 @@ type IndexInfo struct {
 	Name       string
 	Definition string
 	Unique     bool
+	Primary    bool
 }
 
 type TableDetail struct {
@@ -65,14 +66,17 @@ type RowQuery struct {
 }
 
 type Cell struct {
-	Value string
-	Null  bool
+	Value     string
+	Null      bool
+	Truncated bool
+	Encoding  explorer.CellEncoding
 }
 
 type RowPage struct {
 	Columns []string
 	Rows    [][]Cell
 	HasNext bool
+	Order   explorer.RowOrder
 }
 
 // Implementasi tetap wajib mengotorisasi request sendiri sebelum membuka koneksi ke database target
@@ -129,7 +133,7 @@ func (v RowsView) PrevHref() string {
 }
 
 func (v RowsView) NextHref() string {
-	if !v.Page.HasNext {
+	if !v.Page.HasNext || int64(v.Query.Page) > explorer.MaxOffset/int64(v.Query.Limit) {
 		return ""
 	}
 	return v.pageHref(v.Query.Page + 1)
@@ -218,15 +222,11 @@ func rowQuery(r *http.Request, schema, table string) (RowQuery, error) {
 			return RowQuery{}, security.ErrInvalidInput
 		}
 	}
-	page, err := boundedQueryInt(values, "page", 1, 1, maxRowPage)
+	query, err := explorer.ParseRowsQuery(schema, table, values)
 	if err != nil {
 		return RowQuery{}, err
 	}
-	limit, err := boundedQueryInt(values, "limit", defaultRowLimit, 1, maxRowLimit)
-	if err != nil {
-		return RowQuery{}, err
-	}
-	return RowQuery{Schema: schema, Table: table, Page: page, Limit: limit}, nil
+	return RowQuery{Schema: schema, Table: table, Page: query.Page, Limit: query.Limit}, nil
 }
 
 func validRowPage(page RowPage, limit int) bool {

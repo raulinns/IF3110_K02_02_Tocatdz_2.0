@@ -28,7 +28,7 @@ func TestPathIdentifier(t *testing.T) {
 		{"/t/" + strings.Repeat("a", 63), strings.Repeat("a", 63), true},
 		{"/t/" + strings.Repeat("a", 64), "", false},
 		{"/t/bad%00name", "", false},
-		{"/t/bad%0Aname", "", false},
+		{"/t/bad%0Aname", "bad\nname", true},
 		{"/t/%ff%fe", "", false},
 	} {
 		got, gotErr = "", nil

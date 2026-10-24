@@ -4,13 +4,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
-
-const maxIdentifierBytes = 63
 
 func pathID(r *http.Request, name string) (security.ID, error) {
 	id := security.ID(r.PathValue(name))
@@ -23,7 +20,7 @@ func pathID(r *http.Request, name string) (security.ID, error) {
 // Hanya bentuk nama yang dicek; keberadaannya divalidasi terhadap katalog database target
 func pathIdentifier(r *http.Request, name string) (string, error) {
 	value := r.PathValue(name)
-	if value == "" || len(value) > maxIdentifierBytes || !utf8.ValidString(value) || strings.IndexFunc(value, unicode.IsControl) >= 0 {
+	if _, err := explorer.QuoteIdentifier(value); err != nil {
 		return "", security.ErrInvalidInput
 	}
 	return value, nil
@@ -33,7 +30,11 @@ func pathIdentifier(r *http.Request, name string) (string, error) {
 func databasePath(databaseID security.ID, parts ...string) string {
 	segments := []string{"", "databases", url.PathEscape(string(databaseID))}
 	for _, part := range parts {
-		segments = append(segments, url.PathEscape(part))
+		escaped := url.PathEscape(part)
+		if part == "." || part == ".." {
+			escaped = strings.ReplaceAll(part, ".", "%2E")
+		}
+		segments = append(segments, escaped)
 	}
 	return strings.Join(segments, "/")
 }

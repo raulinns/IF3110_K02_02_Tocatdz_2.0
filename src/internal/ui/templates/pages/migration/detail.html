@@ -3,6 +3,7 @@
 	<p class="breadcrumb"><a href="/databases">Database</a> / <a href="{{.Tabs.MigrationsHref}}">Migration</a> / <span class="mono">{{.Migration.ID}}</span></p>
 	<h1>{{.Migration.Title}}</h1>
 	{{template "database-tabs" .Tabs}}
+	{{if eq .Migration.Status "pending"}}<p class="notice">Migration sedang diproses atau menunggu konfirmasi hasil transaksi. Jangan jalankan ulang SQL ini.</p>{{end}}
 	<dl class="facts">
 		<dt>Status</dt><dd><span class="status status-{{.Migration.Status}}">{{.Migration.Status.Label}}</span></dd>
 		<dt>Versi</dt><dd class="mono">{{.Migration.VersionLabel}}</dd>

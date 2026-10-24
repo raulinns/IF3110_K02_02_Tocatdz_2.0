@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// Jalankan dengan -tags=argon2integration setelah x/crypto ditambahkan ke go.mod
+// Jalankan dengan -tags=argon2integration untuk menguji backend Argon2id asli.
 func TestArgon2idBackendIntegration(t *testing.T) {
 	hasher, err := security.NewArgon2idHasher(argon2.IDKey)
 	if err != nil {

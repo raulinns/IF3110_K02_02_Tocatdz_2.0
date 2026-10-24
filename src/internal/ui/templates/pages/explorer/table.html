@@ -14,7 +14,7 @@
 					<td class="mono">{{.Name}}</td>
 					<td class="mono">{{.Type}}</td>
 					<td>{{if .Nullable}}Ya{{else}}Tidak{{end}}</td>
-					<td class="mono">{{if .Default}}{{.Default}}{{else}}-{{end}}</td>
+					<td class="mono">{{if or .HasDefault .Default}}{{.Default}}{{else}}-{{end}}</td>
 				</tr>
 				{{else}}
 				<tr><td colspan="4">Tidak ada kolom.</td></tr>
@@ -47,7 +47,7 @@
 				{{range .Table.Indexes}}
 				<tr>
 					<td class="mono">{{.Name}}</td>
-					<td>{{if .Unique}}Ya{{else}}Tidak{{end}}</td>
+					<td>{{if .Unique}}Ya{{else}}Tidak{{end}}{{if .Primary}} (primary key){{end}}</td>
 					<td class="mono">{{.Definition}}</td>
 				</tr>
 				{{else}}
