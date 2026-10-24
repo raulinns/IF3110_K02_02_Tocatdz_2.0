@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,12 +13,26 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/app"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/config"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/logging"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/platformdb"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/web"
 )
 
+type databasePool interface {
+	Close()
+}
+
+type databaseOpener func(
+	context.Context,
+	platformdb.Config,
+) (databasePool, error)
+
 func main() {
 	if err := run(); err != nil {
-		slog.Error("application stopped with an error", "error", err)
+		slog.Error(
+			"application stopped with an error",
+			"error",
+			err,
+		)
 		os.Exit(1)
 	}
 }
@@ -47,12 +62,49 @@ func run() error {
 	)
 	defer stop()
 
+	return runApplication(
+		ctx,
+		cfg,
+		logger,
+		server,
+		func(
+			ctx context.Context,
+			cfg platformdb.Config,
+		) (databasePool, error) {
+			return platformdb.OpenMigrated(ctx, cfg)
+		},
+	)
+}
+
+func runApplication(
+	ctx context.Context,
+	cfg config.Config,
+	logger *slog.Logger,
+	server app.HTTPServer,
+	openDatabase databaseOpener,
+) error {
+	pool, err := openDatabase(
+		ctx,
+		platformdb.Config{
+			URL: cfg.DatabaseURL,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"open platform database: %w",
+			err,
+		)
+	}
+	defer pool.Close()
+
+	logger.Info("platform database connected")
+
 	logger.Info(
 		"starting HTTP server",
 		"environment",
 		cfg.AppEnv,
 		"address",
-		server.Addr,
+		cfg.HTTPAddr,
 	)
 
 	if err := app.Run(ctx, server); err != nil {
