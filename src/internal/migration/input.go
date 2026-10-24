@@ -71,6 +71,9 @@ func safeError(err error) error {
 	if err == nil {
 		return nil
 	}
+	if errors.Is(err, ErrExecutionUncertain) {
+		return ErrExecutionUncertain
+	}
 	for _, allowed := range []error{security.ErrUnauthenticated, security.ErrForbidden, security.ErrNotFound, security.ErrConflict, security.ErrInvalidInput, security.ErrResultTooLarge} {
 		if errors.Is(err, allowed) {
 			return allowed
