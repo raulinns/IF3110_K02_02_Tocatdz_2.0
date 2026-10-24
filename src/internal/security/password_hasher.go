@@ -125,9 +125,8 @@ func (h *Argon2idHasher) Hash(ctx context.Context, password Secret) (Secret, err
 	if h == nil || h.entropy == nil {
 		return Secret{}, ErrInvalidInput
 	}
-	value := password.Reveal()
-	if len(value) > MaxPasswordBytes || !utf8.ValidString(value) || utf8.RuneCountInString(value) < MinPasswordRunes {
-		return Secret{}, ErrInvalidInput
+	if err := ValidateNewPassword(password); err != nil {
+		return Secret{}, err
 	}
 	salt := make([]byte, PasswordSaltBytes)
 	if _, err := io.ReadFull(h.entropy, salt); err != nil {

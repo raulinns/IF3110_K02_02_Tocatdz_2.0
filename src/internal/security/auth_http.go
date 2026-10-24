@@ -11,11 +11,12 @@ import (
 const MaxLoginFormBytes int64 = 16 << 10
 
 type HTTPMiddlewareConfig struct {
-	Auth     Authenticator
-	Logout   CheckedLogout
-	CSRF     CSRFGuard
-	Cookies  *SessionCookies
-	Throttle LoginThrottle
+	Auth        Authenticator
+	Logout      CheckedLogout
+	CSRF        CSRFGuard
+	Cookies     *SessionCookies
+	Throttle    LoginThrottle
+	ErrorWriter HTTPErrorWriter
 }
 
 type HTTPMiddleware struct{ deps HTTPMiddlewareConfig }
@@ -30,6 +31,9 @@ func NewHTTPMiddleware(cfg HTTPMiddlewareConfig) (*HTTPMiddleware, error) {
 	}
 	if !cfg.Cookies.configured {
 		return nil, ErrInvalidInput
+	}
+	if cfg.ErrorWriter == nil {
+		cfg.ErrorWriter = func(w http.ResponseWriter, _ *http.Request, err error) { WriteHTTPError(w, err) }
 	}
 	return &HTTPMiddleware{deps: cfg}, nil
 }
@@ -55,23 +59,23 @@ func (m *HTTPMiddleware) Protected(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if next == nil {
-			WriteHTTPError(w, ErrUnavailable)
+			m.writeError(w, r, ErrUnavailable)
 			return
 		}
 		if err := m.deps.CSRF.VerifyOrigin(r); err != nil {
-			WriteHTTPError(w, err)
+			m.writeError(w, r, err)
 			return
 		}
 		cookie, err := m.deps.Cookies.Read(r)
 		if err != nil {
-			m.rejectAuthentication(w, err)
+			m.rejectAuthentication(w, r, err)
 			return
 		}
 		var check SessionCheck
 		if !SafeMethod(r.Method) {
 			token, err := ReadCSRFToken(w, r)
 			if err != nil {
-				WriteHTTPError(w, err)
+				m.writeError(w, r, err)
 				return
 			}
 			check = func(ctx context.Context, principal Principal) error {
@@ -80,11 +84,11 @@ func (m *HTTPMiddleware) Protected(next http.Handler) http.Handler {
 		}
 		result, err := m.deps.Auth.Authenticate(r.Context(), cookie, check)
 		if err != nil {
-			m.rejectAuthentication(w, err)
+			m.rejectAuthentication(w, r, err)
 			return
 		}
 		if err := m.deps.Cookies.Write(w, result.CookieToken); err != nil {
-			WriteHTTPError(w, err)
+			m.writeError(w, r, err)
 			return
 		}
 		ctx := WithPrincipal(r.Context(), result.Principal)
@@ -93,11 +97,11 @@ func (m *HTTPMiddleware) Protected(next http.Handler) http.Handler {
 	})
 }
 
-func (m *HTTPMiddleware) rejectAuthentication(w http.ResponseWriter, err error) {
+func (m *HTTPMiddleware) rejectAuthentication(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, ErrUnauthenticated) {
 		_ = m.deps.Cookies.Clear(w)
 	}
-	WriteHTTPError(w, err)
+	m.writeError(w, r, err)
 }
 
 func loginFormType(r *http.Request) bool {
@@ -113,29 +117,29 @@ func (m *HTTPMiddleware) LoginProtected(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "Metode tidak diizinkan", http.StatusMethodNotAllowed)
+			m.writeError(w, r, ErrMethodNotAllowed)
 			return
 		}
 		if next == nil {
-			WriteHTTPError(w, ErrUnavailable)
+			m.writeError(w, r, ErrUnavailable)
 			return
 		}
 		if err := m.deps.CSRF.VerifyOrigin(r); err != nil {
-			WriteHTTPError(w, err)
+			m.writeError(w, r, err)
 			return
 		}
 		if r.URL.RawQuery != "" || !loginFormType(r) || r.ContentLength > MaxLoginFormBytes || r.PostForm != nil || r.Body == nil {
-			WriteHTTPError(w, ErrInvalidInput)
+			m.writeError(w, r, ErrInvalidInput)
 			return
 		}
 		// RemoteAddr dipakai langsung supaya header proxy dari client tidak bisa mengakali batas percobaan login.
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
-			WriteHTTPError(w, ErrInvalidInput)
+			m.writeError(w, r, ErrInvalidInput)
 			return
 		}
 		if err := m.deps.Throttle.CheckIP(r.Context(), ip); err != nil {
-			WriteHTTPError(w, err)
+			m.writeError(w, r, err)
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, MaxLoginFormBytes)
@@ -162,16 +166,16 @@ func (m *HTTPMiddleware) LogoutHandler() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "Metode tidak diizinkan", http.StatusMethodNotAllowed)
+			m.writeError(w, r, ErrMethodNotAllowed)
 			return
 		}
 		if err := m.deps.CSRF.VerifyOrigin(r); err != nil {
-			WriteHTTPError(w, err)
+			m.writeError(w, r, err)
 			return
 		}
 		cookie, err := m.deps.Cookies.Read(r)
 		if err != nil && !errors.Is(err, ErrUnauthenticated) {
-			WriteHTTPError(w, err)
+			m.writeError(w, r, err)
 			return
 		}
 		check := func(ctx context.Context, principal Principal) error {
@@ -182,40 +186,53 @@ func (m *HTTPMiddleware) LogoutHandler() http.Handler {
 			return m.deps.CSRF.VerifyToken(ctx, principal, token)
 		}
 		if err := m.deps.Logout.LogoutWithCheck(r.Context(), cookie, check); err != nil {
-			WriteHTTPError(w, err)
+			m.writeError(w, r, err)
 			return
 		}
 		if err := m.deps.Cookies.Clear(w); err != nil {
-			WriteHTTPError(w, err)
+			m.writeError(w, r, err)
 			return
 		}
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	})
 }
 
-func WriteHTTPError(w http.ResponseWriter, err error) {
-	status, message := http.StatusInternalServerError, "Terjadi kesalahan"
-	switch {
-	case errors.Is(err, ErrInvalidInput):
-		status, message = http.StatusBadRequest, "Input tidak valid"
-	case errors.Is(err, ErrInvalidCredentials):
-		status, message = http.StatusUnauthorized, "Username atau password tidak valid"
-	case errors.Is(err, ErrUnauthenticated):
-		status, message = http.StatusUnauthorized, "Silakan login kembali"
-	case errors.Is(err, ErrForbidden):
-		status, message = http.StatusForbidden, "Akses ditolak"
-	case errors.Is(err, ErrCSRF):
-		status, message = http.StatusForbidden, "Permintaan tidak valid"
-	case errors.Is(err, ErrNotFound):
-		status, message = http.StatusNotFound, "Data tidak ditemukan"
-	case errors.Is(err, ErrConflict):
-		status, message = http.StatusConflict, "Data berubah, silakan muat ulang"
-	case errors.Is(err, ErrRateLimited):
-		status, message = http.StatusTooManyRequests, "Terlalu banyak percobaan"
-		w.Header().Set("Retry-After", "60")
-	case errors.Is(err, ErrUnavailable), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		status, message = http.StatusServiceUnavailable, "Layanan sementara tidak tersedia"
+func (m *HTTPMiddleware) writeError(w http.ResponseWriter, r *http.Request, err error) {
+	errorHeaders(w, err)
+	status, _ := HTTPStatus(err)
+	response := &errorResponseWriter{ResponseWriter: w, status: status, err: err, allow: w.Header().Get("Allow")}
+	m.deps.ErrorWriter(response, r, err)
+	if !response.wroteHeader {
+		response.WriteHeader(status)
 	}
-	w.Header().Set("Cache-Control", "no-store")
-	http.Error(w, message, status)
 }
+
+type errorResponseWriter struct {
+	http.ResponseWriter
+	status      int
+	err         error
+	allow       string
+	wroteHeader bool
+}
+
+// Renderer cukup mengurus tampilan, sementara status dan header keamanan tetap dijaga di sini.
+func (w *errorResponseWriter) WriteHeader(_ int) {
+	if w.wroteHeader {
+		return
+	}
+	errorHeaders(w.ResponseWriter, w.err)
+	if w.allow != "" {
+		w.Header().Set("Allow", w.allow)
+	}
+	w.wroteHeader = true
+	w.ResponseWriter.WriteHeader(w.status)
+}
+
+func (w *errorResponseWriter) Write(body []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(w.status)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func (w *errorResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
