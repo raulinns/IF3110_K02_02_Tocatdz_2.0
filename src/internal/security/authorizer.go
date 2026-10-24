@@ -53,6 +53,11 @@ func (a *BackendAuthorizer) RequirePlatformAdmin(ctx context.Context, principal 
 	return nil
 }
 
+func (a *BackendAuthorizer) RequireAuthenticated(ctx context.Context, principal Principal) error {
+	_, err := a.current(ctx, principal)
+	return err
+}
+
 func (a *BackendAuthorizer) RequireDatabase(ctx context.Context, principal Principal, databaseID ID, action DatabaseAction) error {
 	if !ValidID(databaseID) || !Allows(AccessViewEdit, action) {
 		return ErrForbidden

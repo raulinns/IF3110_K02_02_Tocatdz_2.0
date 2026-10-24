@@ -16,7 +16,7 @@ func TestHTTPStatusMatchesDefaultWriterIncludingWrappedErrors(t *testing.T) {
 		status int
 	}{
 		{ErrInvalidInput, 400}, {ErrInvalidCredentials, 401}, {ErrUnauthenticated, 401}, {ErrForbidden, 403}, {ErrCSRF, 403},
-		{ErrNotFound, 404}, {ErrMethodNotAllowed, 405}, {ErrConflict, 409}, {ErrRateLimited, 429}, {ErrUnavailable, 503},
+		{ErrNotFound, 404}, {ErrMethodNotAllowed, 405}, {ErrConflict, 409}, {ErrRateLimited, 429}, {ErrResultTooLarge, 422}, {ErrUnavailable, 503},
 		{context.Canceled, 503}, {context.DeadlineExceeded, 503}, {errors.Join(ErrInvalidInput, ErrPasswordTooShort), 400},
 		{errors.Join(ErrInvalidInput, ErrPasswordTooLong), 400}, {errors.Join(ErrInvalidInput, ErrPasswordInvalidEncoding), 400},
 		{errors.New("private-secret-canary"), 500}, {nil, 500},
