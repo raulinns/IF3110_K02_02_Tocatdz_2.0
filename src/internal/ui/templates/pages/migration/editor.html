@@ -1,1 +1,8 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}
+<section class="narrow">
+	<p class="breadcrumb"><a href="/databases">Database</a> / <a href="{{.Tabs.MigrationsHref}}">Migration</a> / Editor</p>
+	<h1>Editor migration</h1>
+	{{template "database-tabs" .Tabs}}
+	<p class="lead">Tinjau SQL sebelum disimpan. Draft baru bisa dijalankan dari halaman detailnya.</p>
+</section>
+{{end}}{{if .Content}}<section class="narrow">{{template "migration-form" .}}</section>{{end}}{{end}}

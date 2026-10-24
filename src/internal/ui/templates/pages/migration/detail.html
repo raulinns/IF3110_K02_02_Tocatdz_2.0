@@ -1,1 +1,34 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}
+<section>
+	<p class="breadcrumb"><a href="/databases">Database</a> / <a href="{{.Tabs.MigrationsHref}}">Migration</a> / <span class="mono">{{.Migration.ID}}</span></p>
+	<h1>{{.Migration.Title}}</h1>
+	{{template "database-tabs" .Tabs}}
+	{{if eq .Migration.Status "pending"}}<p class="notice">Migration sedang diproses atau menunggu konfirmasi hasil transaksi. Jangan jalankan ulang SQL ini.</p>{{end}}
+	<dl class="facts">
+		<dt>Status</dt><dd><span class="status status-{{.Migration.Status}}">{{.Migration.Status.Label}}</span></dd>
+		<dt>Versi</dt><dd class="mono">{{.Migration.VersionLabel}}</dd>
+		<dt>Pelaksana</dt><dd class="mono">{{if .Migration.Actor}}{{.Migration.Actor}}{{else}}-{{end}}</dd>
+		<dt>Waktu eksekusi</dt><dd class="mono">{{.Migration.ExecutedLabel}}</dd>
+		<dt>Terakhir diubah</dt><dd class="mono">{{.Migration.UpdatedLabel}}</dd>
+		{{if .Migration.FailureReason}}<dt>Penyebab gagal</dt><dd>{{.Migration.FailureReason}}</dd>{{end}}
+	</dl>
+	{{if not .Editable}}
+	<h2>SQL</h2>
+	<pre class="code-block mono">{{.Migration.SQL}}</pre>
+	{{end}}
+</section>
+{{end}}{{if and .Content .Content.Editable}}
+<section class="narrow">
+	<h2>Ubah draft</h2>
+	{{template "migration-form" .}}
+</section>
+<section class="narrow">
+	<h2>Jalankan</h2>
+	<p class="lead">SQL dijalankan dalam satu transaction: commit jika seluruh perintah berhasil, rollback jika ada yang gagal. Simpan perubahan terlebih dahulu sebelum menjalankan.</p>
+	<form method="post" action="{{.Content.ExecuteAction}}">
+		<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+		<input type="hidden" name="revision" value="{{.Content.Migration.Revision}}">
+		<button type="submit" class="button button-primary">Jalankan migration</button>
+	</form>
+</section>
+{{end}}{{end}}
