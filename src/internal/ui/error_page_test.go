@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,17 +13,23 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
-func TestErrorResponseMatchesSecurityMapping(t *testing.T) {
+func TestRenderErrorFollowsSecurityMapping(t *testing.T) {
+	r, err := NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, err := range []error{
 		security.ErrInvalidInput, security.ErrInvalidCredentials, security.ErrUnauthenticated,
 		security.ErrForbidden, security.ErrCSRF, security.ErrNotFound, security.ErrConflict,
-		security.ErrRateLimited, security.ErrUnavailable, context.Canceled, context.DeadlineExceeded,
+		security.ErrRateLimited, security.ErrUnavailable, security.ErrMethodNotAllowed, context.Canceled,
+		security.ValidateNewPassword(security.NewSecret("pendek")),
 		fmt.Errorf("load database: %w", security.ErrForbidden), errors.New("unexpected"),
 	} {
 		w := httptest.NewRecorder()
-		security.WriteHTTPError(w, err)
-		if status, message := errorResponse(err); status != w.Code || message+"\n" != w.Body.String() {
-			t.Fatal("ui error mapping drifted from security for: " + err.Error())
+		_ = r.RenderError(w, httptest.NewRequest("GET", "/", nil), err)
+		status, message := security.HTTPStatus(err)
+		if w.Code != status || !strings.Contains(w.Body.String(), html.EscapeString(message)) {
+			t.Fatal("error page does not follow security mapping for: " + err.Error())
 		}
 	}
 }

@@ -25,11 +25,11 @@ type Page struct {
 	Content  any
 	Identity security.Identity
 	SignedIn bool
-	CSRF security.Secret // Diekspor agar fmt manggil Secret.Format dan tidak cetak isi token
+	csrf     security.Secret
 }
 
 // Token CSRF hanya dibuka saat dimasukkan ke hidden field form
-func (p Page) CSRFToken() string { return p.CSRF.Reveal() }
+func (p Page) CSRFToken() string { return p.csrf.Reveal() }
 
 type viewer struct {
 	identity security.Identity
@@ -84,7 +84,7 @@ func (r *Renderer) Render(w http.ResponseWriter, req *http.Request, status int, 
 		return ErrTemplateNotFound
 	}
 	current := r.viewer(req.Context())
-	page.Identity, page.SignedIn, page.CSRF = current.identity, current.signedIn, current.csrf
+	page.Identity, page.SignedIn, page.csrf = current.identity, current.signedIn, current.csrf
 	var body bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&body, layoutTemplate, page); err != nil {
 		renderFailure(w)
