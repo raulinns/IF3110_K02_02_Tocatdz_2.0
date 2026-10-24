@@ -1,1 +1,36 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}{{$view := .}}
+<section>
+	<p class="breadcrumb"><a href="/databases">Database</a> / Migration</p>
+	<h1>Riwayat migration</h1>
+	{{template "database-tabs" .Tabs}}
+	{{if .CanEdit}}<p><a class="button button-ghost" href="{{.NewHref}}">Buat migration</a></p>{{end}}
+	{{if .Migrations}}
+	<div class="table-wrap">
+		<table class="table">
+			<thead>
+				<tr>
+					<th scope="col">Versi</th>
+					<th scope="col">Judul</th>
+					<th scope="col">Status</th>
+					<th scope="col">Pelaksana</th>
+					<th scope="col">Waktu eksekusi</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Migrations}}
+				<tr>
+					<td class="mono">{{.VersionLabel}}</td>
+					<td><a href="{{$view.DetailHref .ID}}">{{.Title}}</a></td>
+					<td><span class="status status-{{.Status}}">{{.Status.Label}}</span></td>
+					<td class="mono">{{if .Actor}}{{.Actor}}{{else}}-{{end}}</td>
+					<td class="mono">{{.ExecutedLabel}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{else}}
+	<p class="lead">Belum ada migration untuk database ini.</p>
+	{{end}}
+</section>
+{{end}}{{end}}
