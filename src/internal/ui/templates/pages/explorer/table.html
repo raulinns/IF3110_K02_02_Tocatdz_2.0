@@ -1,1 +1,60 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}
+<section>
+	<p class="breadcrumb"><a href="/databases">Database</a> / <a href="{{.Tabs.SchemaHref}}">Schema</a> / <span class="mono">{{.Table.Schema}}.{{.Table.Name}}</span></p>
+	<h1 class="mono">{{.Table.Schema}}.{{.Table.Name}}</h1>
+	{{template "database-tabs" .Tabs}}
+	<p><a class="button button-ghost" href="{{.RowsHref}}">Lihat data</a></p>
+	<h2>Kolom</h2>
+	<div class="table-wrap">
+		<table class="table">
+			<thead><tr><th scope="col">Nama</th><th scope="col">Tipe</th><th scope="col">Nullable</th><th scope="col">Default</th></tr></thead>
+			<tbody>
+				{{range .Table.Columns}}
+				<tr>
+					<td class="mono">{{.Name}}</td>
+					<td class="mono">{{.Type}}</td>
+					<td>{{if .Nullable}}Ya{{else}}Tidak{{end}}</td>
+					<td class="mono">{{if .Default}}{{.Default}}{{else}}-{{end}}</td>
+				</tr>
+				{{else}}
+				<tr><td colspan="4">Tidak ada kolom.</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	<h2>Constraint</h2>
+	<div class="table-wrap">
+		<table class="table">
+			<thead><tr><th scope="col">Nama</th><th scope="col">Jenis</th><th scope="col">Definisi</th></tr></thead>
+			<tbody>
+				{{range .Table.Constraints}}
+				<tr>
+					<td class="mono">{{.Name}}</td>
+					<td>{{.Kind}}</td>
+					<td class="mono">{{.Definition}}</td>
+				</tr>
+				{{else}}
+				<tr><td colspan="3">Tidak ada constraint.</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	<h2>Index</h2>
+	<div class="table-wrap">
+		<table class="table">
+			<thead><tr><th scope="col">Nama</th><th scope="col">Unik</th><th scope="col">Definisi</th></tr></thead>
+			<tbody>
+				{{range .Table.Indexes}}
+				<tr>
+					<td class="mono">{{.Name}}</td>
+					<td>{{if .Unique}}Ya{{else}}Tidak{{end}}</td>
+					<td class="mono">{{.Definition}}</td>
+				</tr>
+				{{else}}
+				<tr><td colspan="3">Tidak ada index.</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}{{end}}
