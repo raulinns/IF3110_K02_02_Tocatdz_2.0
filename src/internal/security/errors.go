@@ -13,6 +13,7 @@ var (
 	ErrUnavailable             = errors.New("dependency unavailable")
 	ErrRateLimited             = errors.New("too many attempts")
 	ErrMethodNotAllowed        = errors.New("method not allowed")
+	ErrResultTooLarge          = errors.New("result exceeds viewer limit")
 	ErrPasswordTooShort        = errors.New("password too short")
 	ErrPasswordTooLong         = errors.New("password too long")
 	ErrPasswordInvalidEncoding = errors.New("invalid password encoding")
