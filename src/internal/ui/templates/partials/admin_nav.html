@@ -1,0 +1,8 @@
+{{define "admin-nav"}}
+<nav class="tabs" aria-label="Bagian admin">
+	<a href="/admin/users"{{if eq . "users"}} aria-current="page"{{end}}>User</a>
+	<a href="/admin/groups"{{if eq . "groups"}} aria-current="page"{{end}}>Group</a>
+	<a href="/admin/connections"{{if eq . "connections"}} aria-current="page"{{end}}>Koneksi</a>
+	<a href="/admin/grants"{{if eq . "grants"}} aria-current="page"{{end}}>Akses</a>
+</nav>
+{{end}}
