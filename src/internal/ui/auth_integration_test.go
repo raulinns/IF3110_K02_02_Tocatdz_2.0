@@ -28,6 +28,19 @@ type memoryStore struct {
 	mu       sync.Mutex
 	accounts map[security.ID]security.CredentialRecord
 	sessions map[security.ID]security.Session
+	grants   map[security.ID][]security.DatabaseAccess
+}
+
+func (s *memoryStore) AccessForDatabase(_ context.Context, user, database security.ID) (security.AccessSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return security.AccessSnapshot{Account: s.accounts[user].Account, GroupAccess: append([]security.DatabaseAccess(nil), s.grants[database]...)}, nil
+}
+
+func (s *memoryStore) grant(database security.ID, access ...security.DatabaseAccess) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.grants[database] = access
 }
 
 func (s *memoryStore) FindByUsername(_ context.Context, username string) (security.CredentialRecord, error) {
@@ -129,7 +142,6 @@ func (s *memoryStore) Revoke(_ context.Context, id security.ID, now time.Time) e
 	return nil
 }
 
-
 func testKeyDeriver(password, salt []byte, _, _ uint32, _ uint8, _ uint32) []byte {
 	key := sha256.Sum256(append(append([]byte(nil), password...), salt...))
 	return key[:]
@@ -139,7 +151,17 @@ func testKey(fill byte) security.Secret {
 	return security.NewSecret(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{fill}, 32)))
 }
 
-func newIntegrationServer(t *testing.T) *http.ServeMux {
+type integrationEnv struct {
+	mux        *http.ServeMux
+	store      *memoryStore
+	explorer   *memoryExplorer
+	migrations *memoryMigrations
+	admin      *memoryAdmin
+}
+
+func newIntegrationServer(t *testing.T) *http.ServeMux { return newIntegrationEnv(t).mux }
+
+func newIntegrationEnv(t *testing.T) *integrationEnv {
 	t.Helper()
 	ctx := context.Background()
 	hasher, err := security.NewArgon2idHasher(testKeyDeriver)
@@ -155,6 +177,7 @@ func newIntegrationServer(t *testing.T) *http.ServeMux {
 			testUserID: {Account: security.Account{ID: testUserID, Username: "budi", Active: true, AuthVersion: 1}, PasswordHash: hash},
 		},
 		sessions: map[security.ID]security.Session{},
+		grants:   map[security.ID][]security.DatabaseAccess{},
 	}
 	protector, err := security.NewAESGCMTokenProtector(testKey(1))
 	if err != nil {
@@ -179,11 +202,13 @@ func newIntegrationServer(t *testing.T) *http.ServeMux {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guard, err := security.NewHTTPMiddleware(security.HTTPMiddlewareConfig{Auth: auth, Logout: auth, CSRF: csrf, Cookies: cookies, Throttle: throttle})
+	renderer, err := NewRenderer()
 	if err != nil {
 		t.Fatal(err)
 	}
-	renderer, err := NewRenderer()
+	guard, err := security.NewHTTPMiddleware(security.HTTPMiddlewareConfig{
+		Auth: auth, Logout: auth, CSRF: csrf, Cookies: cookies, Throttle: throttle, ErrorWriter: renderer.WriteError,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,12 +216,38 @@ func newIntegrationServer(t *testing.T) *http.ServeMux {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mux := http.NewServeMux()
-	authUI.RegisterRoutes(mux)
-	mux.Handle("GET /databases", guard.Protected(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = renderer.Render(w, r, http.StatusOK, "databases", Page{Title: "Database"})
-	})))
-	return mux
+	authorizer, err := security.NewBackendAuthorizer(store, store, security.SystemClock{}, security.DefaultSessionPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	databaseGuard, err := NewDatabaseGuard(authorizer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	databaseUI, err := NewDatabaseUI(&memoryCatalog{store: store}, guard, renderer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &integrationEnv{
+		mux: http.NewServeMux(), store: store, explorer: &memoryExplorer{},
+		migrations: &memoryMigrations{records: map[security.ID]memoryMigration{}}, admin: &memoryAdmin{},
+	}
+	explorerUI, err := NewExplorerUI(env.explorer, guard, databaseGuard, renderer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationUI, err := NewMigrationUI(env.migrations, guard, databaseGuard, renderer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminUI, err := NewAdminUI(AdminServices{Users: env.admin, Groups: env.admin, Connections: env.admin, Grants: env.admin}, guard, databaseGuard, renderer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, registrar := range []security.RouteRegistrar{authUI, databaseUI, explorerUI, migrationUI, adminUI} {
+		registrar.RegisterRoutes(env.mux)
+	}
+	return env
 }
 
 func browserRequest(method, target, body string, cookie security.Secret) *http.Request {
