@@ -280,3 +280,182 @@ main {
 	margin-top: var(--space-5);
 	padding-left: 0;
 }
+
+.table-wrap {
+	overflow-x: auto;
+	margin-top: var(--space-5);
+}
+
+.table {
+	width: 100%;
+	border-collapse: collapse;
+	background: var(--surface);
+}
+
+.table th,
+.table td {
+	padding: var(--space-3) var(--space-4);
+	text-align: left;
+	border-bottom: 1px solid var(--border);
+}
+
+.table th {
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.table-actions {
+	display: flex;
+	gap: var(--space-4);
+}
+
+h2 {
+	margin: var(--space-6) 0 var(--space-3);
+	font-size: 1.125rem;
+	font-weight: 600;
+}
+
+.narrow {
+	max-width: 48rem;
+}
+
+.breadcrumb {
+	margin: 0 0 var(--space-3);
+	color: var(--text-muted);
+	font-size: 0.75rem;
+}
+
+.tabs {
+	display: flex;
+	gap: var(--space-5);
+	margin: var(--space-4) 0 var(--space-5);
+	border-bottom: 1px solid var(--border);
+}
+
+.tabs a {
+	padding: var(--space-2) 0;
+	color: var(--text-muted);
+	text-decoration: none;
+	border-bottom: 2px solid transparent;
+}
+
+.tabs a[aria-current="page"] {
+	color: var(--text);
+	border-bottom-color: var(--accent);
+}
+
+.table-data td {
+	max-width: 24rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.null {
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.pagination {
+	display: flex;
+	align-items: center;
+	gap: var(--space-4);
+	margin-top: var(--space-4);
+	color: var(--text-muted);
+}
+
+.status {
+	padding: 0 var(--space-2);
+	border: 1px solid var(--border-strong);
+	border-radius: 1rem;
+	font-size: 0.75rem;
+	white-space: nowrap;
+}
+
+.status-applied {
+	border-color: #24a148;
+}
+
+.status-failed {
+	border-color: var(--danger);
+}
+
+.status-pending {
+	border-color: #f1c21b;
+}
+
+.facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: var(--space-2) var(--space-5);
+	margin: 0 0 var(--space-5);
+}
+
+.facts dt {
+	color: var(--text-muted);
+}
+
+.facts dd {
+	margin: 0;
+}
+
+.code-block,
+.code-editor {
+	width: 100%;
+	padding: var(--space-4);
+	background: var(--field);
+	color: var(--text);
+	border: 0;
+	border-bottom: 1px solid var(--border-strong);
+	font-family: var(--font-mono);
+	font-size: 0.8125rem;
+	line-height: 1.6;
+	white-space: pre-wrap;
+	overflow-x: auto;
+}
+
+.code-editor {
+	resize: vertical;
+	tab-size: 4;
+}
+
+.field select {
+	height: 2.5rem;
+	padding: 0 var(--space-4);
+	background: var(--field);
+	color: var(--text);
+	border: 0;
+	border-bottom: 1px solid var(--border-strong);
+	font: inherit;
+}
+
+.checkbox {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.hint {
+	margin: 0;
+	font-size: 0.75rem;
+	color: var(--text-muted);
+}
+
+.form-inline {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--space-4);
+	margin-top: var(--space-4);
+}
+
+.form-inline .field {
+	flex: 1;
+	min-width: 12rem;
+}
+
+.form .button-ghost,
+.table form {
+	margin: 0;
+}
