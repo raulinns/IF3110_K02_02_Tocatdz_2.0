@@ -18,6 +18,7 @@ import (
 type explorerFixture struct {
 	store   *memoryStore
 	granted bool
+	access  security.DatabaseAccess
 	reads   int
 	failure error
 	onRead  func()
@@ -30,6 +31,9 @@ func (f *explorerFixture) AccessForDatabase(_ context.Context, user, database se
 	access := security.AccessNone
 	if f.granted && database == testDatabaseA {
 		access = security.AccessViewOnly
+		if f.access != "" {
+			access = f.access
+		}
 	}
 	return security.AccessSnapshot{Account: f.store.accounts[user].Account, GroupAccess: []security.DatabaseAccess{access}}, nil
 }

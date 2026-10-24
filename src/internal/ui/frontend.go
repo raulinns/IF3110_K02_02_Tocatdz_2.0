@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -11,6 +12,7 @@ type FrontendConfig struct {
 	Security   security.HTTPMiddlewareConfig
 	Viewer     explorer.Viewer
 	Authorizer security.Authorizer
+	Migrations migration.Application
 }
 
 type Frontend struct{ routes []security.RouteRegistrar }
@@ -54,7 +56,19 @@ func NewFrontend(cfg FrontendConfig) (*Frontend, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Frontend{routes: []security.RouteRegistrar{auth, databases, tables, static}}, nil
+	routes := []security.RouteRegistrar{auth, databases, tables, static}
+	if cfg.Migrations != nil {
+		adapter, err := NewMigrationAdapter(cfg.Migrations)
+		if err != nil {
+			return nil, err
+		}
+		migrations, err := NewMigrationUI(adapter, guard, access, renderer)
+		if err != nil {
+			return nil, err
+		}
+		routes = append(routes, migrations)
+	}
+	return &Frontend{routes: routes}, nil
 }
 
 func (f *Frontend) RegisterRoutes(mux *http.ServeMux) {

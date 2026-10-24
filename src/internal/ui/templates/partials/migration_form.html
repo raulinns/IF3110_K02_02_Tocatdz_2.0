@@ -1,0 +1,16 @@
+{{define "migration-form"}}{{with .Content.Form}}
+{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
+<form method="post" action="{{.Action}}" class="form">
+	<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+	{{if .Revision}}<input type="hidden" name="revision" value="{{.Revision}}">{{end}}
+	<div class="field">
+		<label for="migration-title">Judul</label>
+		<input id="migration-title" name="title" type="text" value="{{.Title}}" maxlength="120" required>
+	</div>
+	<div class="field">
+		<label for="migration-sql">SQL</label>
+		<textarea id="migration-sql" name="sql" class="mono code-editor" rows="16" spellcheck="false" required>{{.SQL}}</textarea>
+	</div>
+	<button type="submit" class="button button-primary">{{.Submit}}</button>
+</form>
+{{end}}{{end}}
