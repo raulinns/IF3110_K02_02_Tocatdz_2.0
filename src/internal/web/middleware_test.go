@@ -51,7 +51,7 @@ func TestMiddlewareStack(t *testing.T) {
 			`"msg":"HTTP request"`,
 			`"request_id":"` + requestID + `"`,
 			`"method":"GET"`,
-			`"path":"/example"`,
+			`"route":"[unmatched]"`,
 			`"status":204`,
 		}
 

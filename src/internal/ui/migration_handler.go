@@ -77,14 +77,14 @@ func timeLabel(value time.Time) string {
 
 type MigrationDetail struct {
 	MigrationSummary
-	SQL           string
+	SQL           string `json:"-"`
 	Revision      uint64
 	FailureReason string
 }
 
 type MigrationDraft struct {
 	Title string
-	SQL   string
+	SQL   string `json:"-"`
 }
 
 type MigrationHistoryPage struct {
@@ -105,7 +105,7 @@ type MigrationService interface {
 type MigrationForm struct {
 	Action   string
 	Title    string
-	SQL      string
+	SQL      string `json:"-"`
 	Revision uint64
 	Error    string
 	Submit   string

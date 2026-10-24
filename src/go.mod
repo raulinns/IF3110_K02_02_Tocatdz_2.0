@@ -1,6 +1,6 @@
 module github.com/raulinns/IF3110_K02_02_Tocatdz_2.0
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/wasilibs/go-pgquery v0.0.0-20260915022521-81f99195012b
