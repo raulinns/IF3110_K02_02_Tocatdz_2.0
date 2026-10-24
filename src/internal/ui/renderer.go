@@ -25,7 +25,7 @@ type Page struct {
 	Content  any
 	Identity security.Identity
 	SignedIn bool
-	CSRF security.Secret // Diekspor agar fmt manggil Secret.Format dan tidak cetak isi token
+	CSRF     security.Secret // Diekspor agar fmt manggil Secret.Format dan tidak cetak isi token
 }
 
 // Token CSRF hanya dibuka saat dimasukkan ke hidden field form
