@@ -1,1 +1,4 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}
+<h1>{{.Status}}</h1>
+<p>{{.Message}}</p>
+{{end}}{{end}}
