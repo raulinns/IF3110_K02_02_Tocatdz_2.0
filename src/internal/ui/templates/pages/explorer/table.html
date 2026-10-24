@@ -1,12 +1,22 @@
 {{define "content"}}{{with .Content}}
-<section>
-	<p class="breadcrumb"><a href="/databases">Database</a> / <a href="{{.Tabs.SchemaHref}}">Schema</a> / <span class="mono">{{.Table.Schema}}.{{.Table.Name}}</span></p>
-	<h1 class="mono">{{.Table.Schema}}.{{.Table.Name}}</h1>
-	{{template "database-tabs" .Tabs}}
-	<p><a class="button button-ghost" href="{{.RowsHref}}">Lihat data</a></p>
-	<h2>Kolom</h2>
-	<div class="table-wrap">
-		<table class="table">
+<div class="page-header">
+	<nav aria-label="breadcrumb">
+		<ol class="breadcrumb">
+			<li class="breadcrumb-item"><a href="/databases">Database</a></li>
+			<li class="breadcrumb-item"><a href="{{.Tabs.SchemaHref}}">Schema</a></li>
+			<li class="breadcrumb-item active mono" aria-current="page">{{.Table.Schema}}.{{.Table.Name}}</li>
+		</ol>
+	</nav>
+	<h1 class="page-title mono">{{.Table.Schema}}.{{.Table.Name}}</h1>
+</div>
+{{template "database-tabs" .Tabs}}
+<div class="page-actions">
+	<a class="btn btn-primary" href="{{.RowsHref}}"><i class="fas fa-eye" aria-hidden="true"></i>Lihat data</a>
+</div>
+<div class="card">
+	<div class="card-header"><i class="fas fa-table-columns text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Kolom</h2><span class="card-header-meta">{{len .Table.Columns}}</span></div>
+	<div class="table-responsive">
+		<table class="table table-hover">
 			<thead><tr><th scope="col">Nama</th><th scope="col">Tipe</th><th scope="col">Nullable</th><th scope="col">Default</th></tr></thead>
 			<tbody>
 				{{range .Table.Columns}}
@@ -17,31 +27,35 @@
 					<td class="mono">{{if or .HasDefault .Default}}{{.Default}}{{else}}-{{end}}</td>
 				</tr>
 				{{else}}
-				<tr><td colspan="4">Tidak ada kolom.</td></tr>
+				<tr><td colspan="4" class="text-muted">Tidak ada kolom.</td></tr>
 				{{end}}
 			</tbody>
 		</table>
 	</div>
-	<h2>Constraint</h2>
-	<div class="table-wrap">
-		<table class="table">
+</div>
+<div class="card">
+	<div class="card-header"><i class="fas fa-link text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Constraint</h2><span class="card-header-meta">{{len .Table.Constraints}}</span></div>
+	<div class="table-responsive">
+		<table class="table table-hover">
 			<thead><tr><th scope="col">Nama</th><th scope="col">Jenis</th><th scope="col">Definisi</th></tr></thead>
 			<tbody>
 				{{range .Table.Constraints}}
 				<tr>
 					<td class="mono">{{.Name}}</td>
-					<td>{{.Kind}}</td>
+					<td><span class="badge badge-soft">{{.Kind}}</span></td>
 					<td class="mono">{{.Definition}}</td>
 				</tr>
 				{{else}}
-				<tr><td colspan="3">Tidak ada constraint.</td></tr>
+				<tr><td colspan="3" class="text-muted">Tidak ada constraint.</td></tr>
 				{{end}}
 			</tbody>
 		</table>
 	</div>
-	<h2>Index</h2>
-	<div class="table-wrap">
-		<table class="table">
+</div>
+<div class="card">
+	<div class="card-header"><i class="fas fa-bolt text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Index</h2><span class="card-header-meta">{{len .Table.Indexes}}</span></div>
+	<div class="table-responsive">
+		<table class="table table-hover">
 			<thead><tr><th scope="col">Nama</th><th scope="col">Unik</th><th scope="col">Definisi</th></tr></thead>
 			<tbody>
 				{{range .Table.Indexes}}
@@ -51,10 +65,10 @@
 					<td class="mono">{{.Definition}}</td>
 				</tr>
 				{{else}}
-				<tr><td colspan="3">Tidak ada index.</td></tr>
+				<tr><td colspan="3" class="text-muted">Tidak ada index.</td></tr>
 				{{end}}
 			</tbody>
 		</table>
 	</div>
-</section>
+</div>
 {{end}}{{end}}

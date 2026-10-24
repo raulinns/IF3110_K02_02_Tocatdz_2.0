@@ -1,8 +1,15 @@
 {{define "content"}}{{with .Content}}
-<section class="status-page">
-	<p class="status-code mono">{{.Status}}</p>
-	<h1>{{.Message}}</h1>
-	{{if eq .Status 401}}<a class="button button-primary" href="/login">Kembali ke halaman login</a>
-	{{else}}<a class="button button-ghost" href="/databases">Kembali ke daftar database</a>{{end}}
+<section class="error-page">
+	<p class="error-code">{{.Status}}</p>
+	<h1 class="error-title">{{.Message}}</h1>
+	<p class="error-advise">
+		{{if eq .Status 401}}Sesi Anda sudah berakhir atau Anda belum masuk.
+		{{else if eq .Status 403}}Anda tidak memiliki izin untuk membuka halaman atau menjalankan aksi ini.
+		{{else if eq .Status 404}}Halaman atau data yang Anda cari tidak ditemukan.
+		{{else if eq .Status 429}}Tunggu sebentar sebelum mencoba lagi.
+		{{else}}Silakan coba lagi beberapa saat lagi.{{end}}
+	</p>
+	{{if eq .Status 401}}<a class="btn btn-primary btn-round" href="/login"><i class="fas fa-right-to-bracket" aria-hidden="true"></i>Kembali ke halaman login</a>
+	{{else}}<a class="btn btn-primary btn-round" href="/databases"><i class="fas fa-database" aria-hidden="true"></i>Kembali ke daftar database</a>{{end}}
 </section>
 {{end}}{{end}}

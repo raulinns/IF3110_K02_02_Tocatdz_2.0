@@ -1,7 +1,8 @@
 {{define "content"}}{{with .Content}}
-<section class="status-page">
- <h1>Migration belum dijalankan</h1>
- <p>{{.Message}}</p>
- <a class="button button-ghost" href="{{.DetailHref}}">Kembali ke draft</a>
+<section class="error-page">
+	<p class="error-code"><i class="fas fa-ban" aria-hidden="true"></i></p>
+	<h1 class="error-title">Migration belum dijalankan</h1>
+	<p class="error-advise">{{.Message}}</p>
+	<a class="btn btn-primary btn-round" href="{{.DetailHref}}"><i class="fas fa-arrow-left" aria-hidden="true"></i>Kembali ke draft</a>
 </section>
 {{end}}{{end}}

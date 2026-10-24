@@ -1,41 +1,50 @@
 {{define "content"}}{{with .Content}}{{$view := .}}
-<section>
-	<p class="breadcrumb"><a href="/databases">Database</a> / Migration</p>
-	<h1>Riwayat migration</h1>
-	{{template "database-tabs" .Tabs}}
-	{{if .CanEdit}}<p><a class="button button-ghost" href="{{.NewHref}}">Buat migration</a></p>{{end}}
+<div class="page-header">
+	<nav aria-label="breadcrumb">
+		<ol class="breadcrumb">
+			<li class="breadcrumb-item"><a href="/databases">Database</a></li>
+			<li class="breadcrumb-item active" aria-current="page">Migration</li>
+		</ol>
+	</nav>
+	<h1 class="page-title">Riwayat migration</h1>
+</div>
+{{template "database-tabs" .Tabs}}
+{{if .CanEdit}}<div class="page-actions"><a class="btn btn-primary" href="{{.NewHref}}"><i class="fas fa-plus" aria-hidden="true"></i>Buat migration</a></div>{{end}}
+<div class="box box-primary">
 	{{if .Migrations}}
-	<div class="table-wrap">
-		<table class="table">
-			<thead>
-				<tr>
-					<th scope="col">Versi</th>
-					<th scope="col">Judul</th>
-					<th scope="col">Status</th>
-					<th scope="col">Pelaksana</th>
-					<th scope="col">Waktu eksekusi</th>
-				</tr>
-			</thead>
-			<tbody>
-				{{range .Migrations}}
-				<tr>
-					<td class="mono">{{.VersionLabel}}</td>
-					<td><a href="{{$view.DetailHref .ID}}">{{.Title}}</a></td>
-					<td><span class="status status-{{.Status}}">{{.Status.Label}}</span></td>
-					<td class="mono">{{if .Actor}}{{.Actor}}{{else}}-{{end}}</td>
-					<td class="mono">{{.ExecutedLabel}}</td>
-				</tr>
-				{{end}}
-			</tbody>
-		</table>
+	<div class="box-body">
+		<div class="table-responsive">
+			<table class="table table-hover">
+				<thead>
+					<tr>
+						<th scope="col">Versi</th>
+						<th scope="col">Judul</th>
+						<th scope="col">Status</th>
+						<th scope="col">Pelaksana</th>
+						<th scope="col">Waktu eksekusi</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Migrations}}
+					<tr>
+						<td class="mono">{{.VersionLabel}}</td>
+						<td><a href="{{$view.DetailHref .ID}}">{{.Title}}</a></td>
+						<td><span class="badge status status-{{.Status}}">{{.Status.Label}}</span></td>
+						<td class="mono">{{if .Actor}}{{.Actor}}{{else}}-{{end}}</td>
+						<td class="mono text-nowrap">{{.ExecutedLabel}}</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
 	</div>
 	{{else}}
-	<p class="lead">Belum ada migration untuk database ini.</p>
+	<div class="empty-state"><i class="fas fa-code-branch" aria-hidden="true"></i><p class="mb-0">Belum ada migration untuk database ini.</p></div>
 	{{end}}
-	<nav class="pagination" aria-label="Halaman riwayat">
-	 {{with .PrevHref}}<a class="button button-ghost" href="{{.}}">Sebelumnya</a>{{end}}
-	 <span>Halaman {{.Page.Page}}</span>
-	 {{with .NextHref}}<a class="button button-ghost" href="{{.}}">Berikutnya</a>{{end}}
-	</nav>
-</section>
+</div>
+<nav class="pagination-bar" aria-label="Halaman riwayat">
+	<div>{{with .PrevHref}}<a class="btn btn-sm btn-light" href="{{.}}"><i class="fas fa-chevron-left" aria-hidden="true"></i>Sebelumnya</a>{{end}}</div>
+	<span>Halaman {{.Page.Page}}</span>
+	<div>{{with .NextHref}}<a class="btn btn-sm btn-light" href="{{.}}">Berikutnya<i class="fas fa-chevron-right ms-2 me-0" aria-hidden="true"></i></a>{{end}}</div>
+</nav>
 {{end}}{{end}}

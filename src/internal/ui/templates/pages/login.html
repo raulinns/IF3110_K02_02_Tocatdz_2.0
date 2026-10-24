@@ -1,23 +1,35 @@
 {{define "content"}}
-<section class="auth">
-	<div class="auth-panel">
-		<p class="brand">Tocatdz</p>
-		<h1>Masuk</h1>
-		<p class="lead">Platform pengelolaan database PostgreSQL.</p>
-		{{with .Content}}
-		{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
-		<form method="post" action="/login" class="form" novalidate>
-			<div class="field">
-				<label for="username">Username</label>
-				<input id="username" name="username" type="text" value="{{.Username}}" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+<div class="auth-content">
+	<div class="card">
+		<div class="card-body text-center">
+			<div class="mb-4">
+				<img class="brand" src="/static/img/logo.svg" alt="Logo" width="160" height="40">
 			</div>
-			<div class="field">
-				<label for="password">Password</label>
-				<input id="password" name="password" type="password" autocomplete="current-password" required>
-			</div>
-			<button type="submit" class="button button-primary">Masuk</button>
-		</form>
-		{{end}}
+			<h1 class="h6 mb-1">Masuk ke akun Anda</h1>
+			<p class="text-muted small mb-4">Platform pengelolaan database PostgreSQL</p>
+			{{with .Content}}
+			{{if .Error}}<div class="alert alert-danger notice notice-error text-start" role="alert"><i class="fas fa-circle-exclamation" aria-hidden="true"></i><div>{{.Error}}</div></div>{{end}}
+			<form method="post" action="/login" novalidate>
+				<div class="mb-3 text-start">
+					<label for="username" class="form-label">Username</label>
+					<input id="username" name="username" type="text" class="form-control" value="{{.Username}}" placeholder="Masukkan username" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+				</div>
+				<div class="mb-4 text-start">
+					<label for="password" class="form-label">Password</label>
+					<input id="password" name="password" type="password" class="form-control" placeholder="Masukkan password" autocomplete="current-password" required>
+				</div>
+				<button type="submit" class="btn btn-primary w-100"><i class="fas fa-right-to-bracket" aria-hidden="true"></i>Masuk</button>
+			</form>
+			{{end}}
+		</div>
 	</div>
-</section>
+	<div class="auth-footer">
+		<span>Akun dibuat oleh admin platform.</span>
+		<button type="button" class="btn btn-light btn-icon" data-theme-toggle aria-pressed="false" title="Ganti tema">
+			<i class="fas fa-moon theme-icon-dark" aria-hidden="true"></i>
+			<i class="fas fa-sun theme-icon-light" aria-hidden="true"></i>
+			<span class="visually-hidden">Ganti tema gelap atau terang</span>
+		</button>
+	</div>
+</div>
 {{end}}

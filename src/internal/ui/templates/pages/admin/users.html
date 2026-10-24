@@ -1,44 +1,63 @@
 {{define "content"}}{{with .Content}}
-<section>
-	<h1>User</h1>
-	{{template "admin-nav" .Section}}
-	{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
-	<div class="table-wrap">
-		<table class="table">
-			<thead><tr><th scope="col">Username</th><th scope="col">Status</th><th scope="col">Peran</th><th scope="col">Tindakan</th></tr></thead>
-			<tbody>
-				{{range .Data}}
-				<tr>
-					<td class="mono">{{.Username}}</td>
-					<td>{{if .Active}}Aktif{{else}}Nonaktif{{end}}</td>
-					<td>{{if .PlatformAdmin}}Admin platform{{else}}User{{end}}</td>
-					<td>
-						<form method="post" action="/admin/users/{{.ID}}/active">
-							<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-							<input type="hidden" name="active" value="{{if .Active}}false{{else}}true{{end}}">
-							<button type="submit" class="button button-ghost">{{if .Active}}Nonaktifkan{{else}}Aktifkan{{end}}</button>
-						</form>
-					</td>
-				</tr>
-				{{else}}
-				<tr><td colspan="4">Belum ada user.</td></tr>
-				{{end}}
-			</tbody>
-		</table>
+<div class="page-header">
+	<div class="page-pretitle">Administrasi</div>
+	<h1 class="page-title">User</h1>
+</div>
+{{template "admin-nav" .Section}}
+{{if .Error}}<div class="alert alert-danger notice notice-error" role="alert"><i class="fas fa-circle-exclamation" aria-hidden="true"></i><div>{{.Error}}</div></div>{{end}}
+<div class="row g-4">
+	<div class="col-xl-8">
+		<div class="box box-primary mb-0">
+			<div class="box-body">
+				<div class="table-responsive">
+					<table class="table table-hover">
+						<thead><tr><th scope="col">Username</th><th scope="col">Status</th><th scope="col">Peran</th><th scope="col" class="text-end">Tindakan</th></tr></thead>
+						<tbody>
+							{{range .Data}}
+							<tr>
+								<td class="mono"><i class="fas fa-user text-muted" aria-hidden="true"></i> {{.Username}}</td>
+								<td>{{if .Active}}<span class="badge status status-applied">Aktif</span>{{else}}<span class="badge status">Nonaktif</span>{{end}}</td>
+								<td>{{if .PlatformAdmin}}Admin platform{{else}}User{{end}}</td>
+								<td class="text-end">
+									<form method="post" action="/admin/users/{{.ID}}/active">
+										<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+										<input type="hidden" name="active" value="{{if .Active}}false{{else}}true{{end}}">
+										{{if .Active}}<button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-user-slash" aria-hidden="true"></i>Nonaktifkan</button>
+										{{else}}<button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-user-check" aria-hidden="true"></i>Aktifkan</button>{{end}}
+									</form>
+								</td>
+							</tr>
+							{{else}}
+							<tr><td colspan="4" class="text-muted">Belum ada user.</td></tr>
+							{{end}}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
 	</div>
-	<h2>Tambah user</h2>
-	<form method="post" action="/admin/users" class="form narrow">
-		<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-		<div class="field">
-			<label for="new-username">Username</label>
-			<input id="new-username" name="username" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+	<div class="col-xl-4">
+		<div class="card mb-0">
+			<div class="card-header"><i class="fas fa-user-plus text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Tambah user</h2></div>
+			<div class="card-body">
+				<form method="post" action="/admin/users">
+					<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+					<div class="mb-3">
+						<label for="new-username" class="form-label">Username</label>
+						<input id="new-username" name="username" type="text" class="form-control" placeholder="huruf kecil, angka, _" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+					</div>
+					<div class="mb-3">
+						<label for="new-password" class="form-label">Password awal (minimal 15 karakter)</label>
+						<input id="new-password" name="password" type="password" class="form-control" autocomplete="new-password" required>
+					</div>
+					<div class="form-check mb-3">
+						<input id="new-admin" class="form-check-input" name="platform_admin" type="checkbox" value="true">
+						<label class="form-check-label" for="new-admin">Jadikan admin platform</label>
+					</div>
+					<button type="submit" class="btn btn-primary w-100"><i class="fas fa-user-plus" aria-hidden="true"></i>Tambah user</button>
+				</form>
+			</div>
 		</div>
-		<div class="field">
-			<label for="new-password">Password awal (minimal 15 karakter)</label>
-			<input id="new-password" name="password" type="password" autocomplete="new-password" required>
-		</div>
-		<label class="checkbox"><input name="platform_admin" type="checkbox" value="true"> Jadikan admin platform</label>
-		<button type="submit" class="button button-primary">Tambah user</button>
-	</form>
-</section>
+	</div>
+</div>
 {{end}}{{end}}

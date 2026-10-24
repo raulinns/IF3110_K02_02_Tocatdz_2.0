@@ -1,0 +1,17 @@
+{{define "sidebar"}}
+<nav id="sidebar" aria-label="Navigasi utama">
+	<div class="sidebar-header">
+		<a href="/databases" aria-label="Beranda"><img src="/static/img/logo.svg" alt="Logo" class="app-logo" width="160" height="40"></a>
+	</div>
+	<ul class="list-unstyled components">
+		<li><a href="/databases" data-nav="/databases"><i class="fas fa-database" aria-hidden="true"></i> Database</a></li>
+		{{if and (feature "admin") .Identity.PlatformAdmin}}
+		<li class="sidebar-heading">Administrasi</li>
+		<li><a href="/admin/users" data-nav="/admin/users"><i class="fas fa-user" aria-hidden="true"></i> User</a></li>
+		<li><a href="/admin/groups" data-nav="/admin/groups"><i class="fas fa-users" aria-hidden="true"></i> Group</a></li>
+		<li><a href="/admin/connections" data-nav="/admin/connections"><i class="fas fa-plug" aria-hidden="true"></i> Koneksi</a></li>
+		<li><a href="/admin/grants" data-nav="/admin/grants"><i class="fas fa-user-shield" aria-hidden="true"></i> Akses</a></li>
+		{{end}}
+	</ul>
+</nav>
+{{end}}

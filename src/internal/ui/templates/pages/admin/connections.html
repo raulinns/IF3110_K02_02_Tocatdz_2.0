@@ -1,33 +1,48 @@
 {{define "content"}}{{with .Content}}
-<section>
-	<h1>Koneksi database</h1>
-	{{template "admin-nav" .Section}}
-	{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
-	<div class="table-wrap">
-		<table class="table">
-			<thead><tr><th scope="col">Nama</th><th scope="col">ID</th></tr></thead>
-			<tbody>
-				{{range .Data}}
-				<tr><td class="mono">{{.Name}}</td><td class="mono">{{.ID}}</td></tr>
-				{{else}}
-				<tr><td colspan="2">Belum ada koneksi.</td></tr>
-				{{end}}
-			</tbody>
-		</table>
+<div class="page-header">
+	<div class="page-pretitle">Administrasi</div>
+	<h1 class="page-title">Koneksi database</h1>
+</div>
+{{template "admin-nav" .Section}}
+{{if .Error}}<div class="alert alert-danger notice notice-error" role="alert"><i class="fas fa-circle-exclamation" aria-hidden="true"></i><div>{{.Error}}</div></div>{{end}}
+<div class="row g-4">
+	<div class="col-xl-7">
+		<div class="box box-primary mb-0">
+			<div class="box-body">
+				<div class="table-responsive">
+					<table class="table table-hover">
+						<thead><tr><th scope="col">Nama</th><th scope="col">ID</th></tr></thead>
+						<tbody>
+							{{range .Data}}
+							<tr><td class="mono"><i class="fas fa-database text-muted" aria-hidden="true"></i> {{.Name}}</td><td class="mono text-muted small">{{.ID}}</td></tr>
+							{{else}}
+							<tr><td colspan="2" class="text-muted">Belum ada koneksi.</td></tr>
+							{{end}}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
 	</div>
-	<h2>Tambah koneksi PostgreSQL</h2>
-	<form method="post" action="/admin/connections" class="form narrow">
-		<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-		<div class="field">
-			<label for="connection-name">Nama tampilan</label>
-			<input id="connection-name" name="name" type="text" maxlength="64" required>
+	<div class="col-xl-5">
+		<div class="card mb-0">
+			<div class="card-header"><i class="fas fa-plug text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Tambah koneksi PostgreSQL</h2></div>
+			<div class="card-body">
+				<form method="post" action="/admin/connections">
+					<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+					<div class="mb-3">
+						<label for="connection-name" class="form-label">Nama tampilan</label>
+						<input id="connection-name" name="name" type="text" class="form-control" maxlength="64" required>
+					</div>
+					<div class="mb-3">
+						<label for="connection-dsn" class="form-label">Connection string</label>
+						<input id="connection-dsn" name="dsn" type="password" class="form-control" autocomplete="off" spellcheck="false" placeholder="postgres://user:password@host:5432/dbname" required>
+						<div class="form-text"><i class="fas fa-lock" aria-hidden="true"></i> Connection string disimpan terenkripsi dan tidak akan ditampilkan lagi.</div>
+					</div>
+					<button type="submit" class="btn btn-primary w-100"><i class="fas fa-floppy-disk" aria-hidden="true"></i>Simpan koneksi</button>
+				</form>
+			</div>
 		</div>
-		<div class="field">
-			<label for="connection-dsn">Connection string</label>
-			<input id="connection-dsn" name="dsn" type="password" autocomplete="off" spellcheck="false" placeholder="postgres://user:password@host:5432/dbname" required>
-		</div>
-		<p class="hint">Connection string disimpan terenkripsi dan tidak akan ditampilkan lagi.</p>
-		<button type="submit" class="button button-primary">Simpan koneksi</button>
-	</form>
-</section>
+	</div>
+</div>
 {{end}}{{end}}

@@ -1,0 +1,19 @@
+{{define "confirm-modal"}}
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalTitle" aria-hidden="true">
+	<div class="modal-dialog modal-dialog-centered">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="confirmModalTitle"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> Konfirmasi</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+			</div>
+			<div class="modal-body">
+				<p class="mb-0" data-confirm-message></p>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-light" data-bs-dismiss="modal">Batal</button>
+				<button type="button" class="btn btn-primary" data-confirm-accept>Ya, lanjutkan</button>
+			</div>
+		</div>
+	</div>
+</div>
+{{end}}
