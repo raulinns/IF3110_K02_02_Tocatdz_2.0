@@ -13,7 +13,7 @@ import (
 	"net/url"
 )
 
-const MaxCSRFFormBytes int64 = 1 << 20
+const MaxCSRFFormBytes int64 = 2 << 20
 
 type HMACCSRFGuard struct {
 	publicOrigin origin

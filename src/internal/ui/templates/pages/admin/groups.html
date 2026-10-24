@@ -1,1 +1,49 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}
+<section>
+	<h1>Group</h1>
+	{{template "admin-nav" .Section}}
+	{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
+	{{range .Data}}{{$group := .}}
+	<h2>{{.Name}}</h2>
+	<div class="table-wrap">
+		<table class="table">
+			<thead><tr><th scope="col">Anggota</th><th scope="col">Tindakan</th></tr></thead>
+			<tbody>
+				{{range .Members}}
+				<tr>
+					<td class="mono">{{.Username}}</td>
+					<td>
+						<form method="post" action="/admin/groups/{{$group.ID}}/members/{{.ID}}/remove">
+							<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+							<button type="submit" class="button button-ghost">Keluarkan</button>
+						</form>
+					</td>
+				</tr>
+				{{else}}
+				<tr><td colspan="2">Belum ada anggota.</td></tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	<form method="post" action="/admin/groups/{{.ID}}/members" class="form form-inline">
+		<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+		<div class="field">
+			<label for="member-{{.ID}}">Tambah anggota (username)</label>
+			<input id="member-{{.ID}}" name="username" type="text" autocapitalize="none" spellcheck="false" required>
+		</div>
+		<button type="submit" class="button button-ghost">Tambahkan</button>
+	</form>
+	{{else}}
+	<p class="lead">Belum ada group.</p>
+	{{end}}
+	<h2>Buat group</h2>
+	<form method="post" action="/admin/groups" class="form narrow">
+		<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+		<div class="field">
+			<label for="group-name">Nama group</label>
+			<input id="group-name" name="name" type="text" maxlength="64" required>
+		</div>
+		<button type="submit" class="button button-primary">Buat group</button>
+	</form>
+</section>
+{{end}}{{end}}

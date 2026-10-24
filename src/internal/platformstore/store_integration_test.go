@@ -3,7 +3,6 @@ package platformstore
 import (
 	"bytes"
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/platformdb"
 	platformsqlc "github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/platformdb/sqlc"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/testutil/pgtest"
 )
 
 const (
@@ -25,10 +25,7 @@ const (
 func integrationStore(t *testing.T) (*Store, *platformsqlc.Queries, func()) {
 	t.Helper()
 
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not configured")
-	}
+	databaseURL := pgtest.Database(t, "TEST_DATABASE_URL")
 
 	ctx := context.Background()
 	pool, err := platformdb.OpenMigrated(ctx, platformdb.Config{URL: databaseURL})

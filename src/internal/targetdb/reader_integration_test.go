@@ -11,6 +11,7 @@ import (
 	postgresadapter "github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms/postgresql"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/testutil/pgtest"
 )
 
 type directResolver struct {
@@ -23,10 +24,7 @@ func (r directResolver) Connection(context.Context, security.ID) (dbms.Engine, *
 }
 
 func TestReaderAgainstPostgreSQL(t *testing.T) {
-	dsn := os.Getenv("TEST_POSTGRES_TARGET_DSN")
-	if dsn == "" {
-		t.Skip("TEST_POSTGRES_TARGET_DSN is not configured")
-	}
+	dsn := pgtest.Database(t, "TEST_POSTGRES_TARGET_DSN")
 	pool, err := postgresadapter.New().Open(context.Background(), dbms.SQLConfig{DSN: dsn})
 	if err != nil {
 		t.Fatal(err)

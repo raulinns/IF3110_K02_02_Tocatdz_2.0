@@ -2,16 +2,14 @@ package platformdb
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
+
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/testutil/pgtest"
 )
 
 func TestMigrateAppliesIdempotentlyAndDetectsDrift(t *testing.T) {
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not configured")
-	}
+	databaseURL := pgtest.Database(t, "TEST_DATABASE_URL")
 	ctx := context.Background()
 	pool, err := OpenMigrated(ctx, Config{URL: databaseURL})
 	if err != nil {

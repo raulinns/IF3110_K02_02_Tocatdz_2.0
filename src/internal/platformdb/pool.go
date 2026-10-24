@@ -44,7 +44,15 @@ func Open(
 			ctx context.Context,
 			url string,
 		) (*pgxpool.Pool, error) {
-			return pgxpool.New(ctx, url)
+			config, err := pgxpool.ParseConfig(url)
+			if err != nil {
+				return nil, err
+			}
+			config.MaxConns = 10
+			config.ConnConfig.ConnectTimeout = DefaultStartupTimeout
+			config.ConnConfig.RuntimeParams["application_name"] = "tocatdz-platform"
+			config.ConnConfig.RuntimeParams["timezone"] = "UTC"
+			return pgxpool.NewWithConfig(ctx, config)
 		},
 	)
 }

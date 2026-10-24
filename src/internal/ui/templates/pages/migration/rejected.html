@@ -1,0 +1,7 @@
+{{define "content"}}{{with .Content}}
+<section class="status-page">
+ <h1>Migration belum dijalankan</h1>
+ <p>{{.Message}}</p>
+ <a class="button button-ghost" href="{{.DetailHref}}">Kembali ke draft</a>
+</section>
+{{end}}{{end}}

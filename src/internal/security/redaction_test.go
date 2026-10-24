@@ -63,3 +63,33 @@ func TestRequestContextRedactsCSRFWithoutChangingAccessors(t *testing.T) {
 		t.Fatal("zero/empty Secret changed behavior")
 	}
 }
+
+func TestSessionMetadataRedactsFormattingAndLogs(t *testing.T) {
+	f := newAuthFixture(t)
+	result := f.login(t)
+	snapshot, err := f.store.FindByID(t.Context(), result.Principal.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := []any{result.Principal, &result.Principal, snapshot.Session, &snapshot.Session, snapshot, &snapshot, result, &result, snapshot.Session.CurrentDigest, Credentials{Username: "CREDENTIAL_PRIVATE_CANARY", Password: NewSecret("password")}}
+	for _, value := range values {
+		for _, format := range []string{"%v", "%+v", "%#v", "%x", "%q"} {
+			if got := fmt.Sprintf(format, value); got != "[REDACTED]" {
+				t.Fatal("sensitive session value was not redacted")
+			}
+		}
+		for _, jsonLog := range []bool{false, true} {
+			var output bytes.Buffer
+			var handler slog.Handler = slog.NewTextHandler(&output, nil)
+			if jsonLog {
+				handler = slog.NewJSONHandler(&output, nil)
+			}
+			slog.New(handler).Info("audit", "value", value)
+			for _, secret := range []string{string(result.Principal.SessionID), result.CookieToken.Reveal(), result.CSRFToken.Reveal(), "CREDENTIAL_PRIVATE_CANARY"} {
+				if strings.Contains(output.String(), secret) {
+					t.Fatal("session log leaked metadata")
+				}
+			}
+		}
+	}
+}

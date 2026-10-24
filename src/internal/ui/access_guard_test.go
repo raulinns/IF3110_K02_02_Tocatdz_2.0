@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,11 +18,6 @@ const (
 )
 
 var testPrincipal = security.Principal{UserID: testUserID, SessionID: testSessionID, AuthVersion: 1, CSRFEpoch: 1}
-
-func protectedRequest(method, target string, body io.Reader) *http.Request {
-	r := httptest.NewRequest(method, target, body)
-	return r.WithContext(security.WithPrincipal(r.Context(), testPrincipal))
-}
 
 type fakeAuthorizer struct {
 	adminErr, databaseErr error

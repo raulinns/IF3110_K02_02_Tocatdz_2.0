@@ -72,6 +72,13 @@ func loadMigrations(source fs.FS) ([]migration, error) {
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	var application bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'managed_databases' AND column_name = 'dsn_ciphertext')`).Scan(&application); err != nil {
+		return newOperationError("inspect schema", err)
+	}
+	if application {
+		return errors.New("application schema detected; use cmd/server or cmd/seed instead of legacy OpenMigrated")
+	}
 	migrations, err := loadMigrations(embeddedMigrations)
 	if err != nil {
 		return err
