@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// stubKey hanya untuk unit test, sedangkan integration test memakai Argon2id asli.
+// stubKey cm buat unit test, sedangkan integration test memakai Argon2id asli.
 func stubKey(password, salt []byte, iterations, memory uint32, parallelism uint8, keyLen uint32) []byte {
 	input := append(append([]byte(nil), password...), salt...)
 	key := sha256.Sum256(input)

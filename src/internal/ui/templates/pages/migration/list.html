@@ -32,5 +32,10 @@
 	{{else}}
 	<p class="lead">Belum ada migration untuk database ini.</p>
 	{{end}}
+	<nav class="pagination" aria-label="Halaman riwayat">
+	 {{with .PrevHref}}<a class="button button-ghost" href="{{.}}">Sebelumnya</a>{{end}}
+	 <span>Halaman {{.Page.Page}}</span>
+	 {{with .NextHref}}<a class="button button-ghost" href="{{.}}">Berikutnya</a>{{end}}
+	</nav>
 </section>
 {{end}}{{end}}

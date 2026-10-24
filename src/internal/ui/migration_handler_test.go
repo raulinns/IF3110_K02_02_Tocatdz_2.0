@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -26,10 +27,10 @@ type fakeMigrations struct {
 	err         error
 }
 
-func (m *fakeMigrations) History(_ context.Context, request DatabaseRequest) ([]MigrationSummary, error) {
+func (m *fakeMigrations) History(_ context.Context, request DatabaseRequest, query migration.HistoryQuery) (MigrationHistoryPage, error) {
 	m.calls++
 	m.request = request
-	return m.history, m.err
+	return MigrationHistoryPage{Items: m.history, Page: query.Page, Limit: query.Limit}, m.err
 }
 
 func (m *fakeMigrations) Migration(_ context.Context, request DatabaseRequest, id security.ID) (MigrationDetail, error) {
@@ -104,7 +105,7 @@ func TestHistoryShowsMigrationsAndEditButtonOnlyForEditors(t *testing.T) {
 		{ID: testMigrationID, Version: 4, Title: "Buat tabel", Status: StatusApplied, Actor: "budi", ExecutedAt: executed},
 		{ID: testDatabaseB, Title: "Draft baru", Status: StatusDraft},
 	}}
-	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), formRequest("GET", migrationsPath, nil))
+	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), protectedRequest("GET", migrationsPath, nil))
 	body := w.Body.String()
 	for _, want := range []string{"Buat tabel", "Berhasil (commit)", "budi", "2026-10-24 09:30:00 UTC", "Draft baru", migrationsPath + "/new", migrationPath} {
 		if !strings.Contains(body, want) {
@@ -114,7 +115,7 @@ func TestHistoryShowsMigrationsAndEditButtonOnlyForEditors(t *testing.T) {
 	if w.Code != http.StatusOK || migrations.request.DatabaseID != testDatabaseA {
 		t.Fatal("history not loaded for requested database")
 	}
-	w = serve(testMigrationUI(t, migrations, &fakeAuthorizer{denied: viewOnly}), formRequest("GET", migrationsPath, nil))
+	w = serve(testMigrationUI(t, migrations, &fakeAuthorizer{denied: viewOnly}), protectedRequest("GET", migrationsPath, nil))
 	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), migrationsPath+"/new") {
 		t.Fatal("view only user offered create button")
 	}
@@ -122,7 +123,7 @@ func TestHistoryShowsMigrationsAndEditButtonOnlyForEditors(t *testing.T) {
 
 func TestHistoryFailsClosedOnInvalidEntries(t *testing.T) {
 	for _, bad := range []MigrationSummary{{ID: "x", Status: StatusDraft}, {ID: testMigrationID, Status: "deleted"}} {
-		w := serve(testMigrationUI(t, &fakeMigrations{history: []MigrationSummary{bad}}, &fakeAuthorizer{}), formRequest("GET", migrationsPath, nil))
+		w := serve(testMigrationUI(t, &fakeMigrations{history: []MigrationSummary{bad}}, &fakeAuthorizer{}), protectedRequest("GET", migrationsPath, nil))
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatal("invalid history entry rendered")
 		}
@@ -130,18 +131,18 @@ func TestHistoryFailsClosedOnInvalidEntries(t *testing.T) {
 }
 
 func TestDetailOffersEditorOnlyForEditableDrafts(t *testing.T) {
-	w := serve(testMigrationUI(t, &fakeMigrations{detail: draftDetail()}, &fakeAuthorizer{}), formRequest("GET", migrationPath, nil))
+	w := serve(testMigrationUI(t, &fakeMigrations{detail: draftDetail()}, &fakeAuthorizer{}), protectedRequest("GET", migrationPath, nil))
 	body := w.Body.String()
 	if w.Code != http.StatusOK || !strings.Contains(body, `name="revision" value="3"`) || !strings.Contains(body, `action="`+executePath+`"`) || !strings.Contains(body, "<textarea") {
 		t.Fatal("editable draft missing editor or execute form")
 	}
-	w = serve(testMigrationUI(t, &fakeMigrations{detail: draftDetail()}, &fakeAuthorizer{denied: viewOnly}), formRequest("GET", migrationPath, nil))
+	w = serve(testMigrationUI(t, &fakeMigrations{detail: draftDetail()}, &fakeAuthorizer{denied: viewOnly}), protectedRequest("GET", migrationPath, nil))
 	if strings.Contains(w.Body.String(), "<textarea") || strings.Contains(w.Body.String(), executePath) || !strings.Contains(w.Body.String(), "ADD COLUMN phone") {
 		t.Fatal("view only user offered edit controls or missing SQL")
 	}
 	applied := draftDetail()
 	applied.Status, applied.Version, applied.Actor = StatusApplied, 5, "budi"
-	w = serve(testMigrationUI(t, &fakeMigrations{detail: applied}, &fakeAuthorizer{}), formRequest("GET", migrationPath, nil))
+	w = serve(testMigrationUI(t, &fakeMigrations{detail: applied}, &fakeAuthorizer{}), protectedRequest("GET", migrationPath, nil))
 	if strings.Contains(w.Body.String(), "<textarea") || strings.Contains(w.Body.String(), executePath) || !strings.Contains(w.Body.String(), "<pre") {
 		t.Fatal("executed migration became editable")
 	}
@@ -151,11 +152,11 @@ func TestDetailRejectsMigrationFromAnotherRequest(t *testing.T) {
 	other := draftDetail()
 	other.ID = testDatabaseB
 	migrations := &fakeMigrations{detail: other}
-	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), formRequest("GET", migrationPath, nil))
+	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), protectedRequest("GET", migrationPath, nil))
 	if w.Code != http.StatusServiceUnavailable || strings.Contains(w.Body.String(), "ADD COLUMN") || migrations.migrationID != testMigrationID {
 		t.Fatal("mismatched migration rendered")
 	}
-	w = serve(testMigrationUI(t, &fakeMigrations{}, &fakeAuthorizer{}), formRequest("GET", migrationsPath+"/bukan-uuid", nil))
+	w = serve(testMigrationUI(t, &fakeMigrations{}, &fakeAuthorizer{}), protectedRequest("GET", migrationsPath+"/bukan-uuid", nil))
 	if w.Code != http.StatusBadRequest {
 		t.Fatal("malformed migration id accepted")
 	}
@@ -165,7 +166,7 @@ func TestDetailEscapesSQL(t *testing.T) {
 	detail := draftDetail()
 	detail.Status = StatusFailed
 	detail.SQL = "SELECT '</pre><script>alert(1)</script>';"
-	w := serve(testMigrationUI(t, &fakeMigrations{detail: detail}, &fakeAuthorizer{}), formRequest("GET", migrationPath, nil))
+	w := serve(testMigrationUI(t, &fakeMigrations{detail: detail}, &fakeAuthorizer{}), protectedRequest("GET", migrationPath, nil))
 	if strings.Contains(w.Body.String(), "<script>alert") {
 		t.Fatal("migration SQL not escaped")
 	}
@@ -174,7 +175,7 @@ func TestDetailEscapesSQL(t *testing.T) {
 func TestCreateDraftRedirectsToDetail(t *testing.T) {
 	migrations := &fakeMigrations{createdID: testMigrationID}
 	sql := "  CREATE TABLE a (id int);\r\n"
-	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), formRequest("POST", migrationsPath, url.Values{"title": {"  Buat tabel a "}, "sql": {sql}, "csrf_token": {"t"}}))
+	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), protectedRequest("POST", migrationsPath, url.Values{"title": {"  Buat tabel a "}, "sql": {sql}, "csrf_token": {"t"}}))
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != migrationPath {
 		t.Fatal("created draft did not redirect to detail")
 	}
@@ -191,12 +192,12 @@ func TestCreateDraftValidationKeepsInput(t *testing.T) {
 		{"title": {"Judul"}, "sql": {strings.Repeat("x", maxMigrationSQLBytes+1)}},
 	} {
 		migrations := &fakeMigrations{}
-		w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), formRequest("POST", migrationsPath, form))
+		w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), protectedRequest("POST", migrationsPath, form))
 		if w.Code != http.StatusBadRequest || migrations.calls != 0 || !strings.Contains(w.Body.String(), "notice-error") {
 			t.Fatal("invalid draft reached service")
 		}
 	}
-	w := serve(testMigrationUI(t, &fakeMigrations{}, &fakeAuthorizer{}), formRequest("POST", migrationsPath, url.Values{"title": {""}, "sql": {"DROP TABLE penting;"}}))
+	w := serve(testMigrationUI(t, &fakeMigrations{}, &fakeAuthorizer{}), protectedRequest("POST", migrationsPath, url.Values{"title": {""}, "sql": {"DROP TABLE penting;"}}))
 	if !strings.Contains(w.Body.String(), "DROP TABLE penting;") {
 		t.Fatal("typed SQL lost after validation error")
 	}
@@ -213,12 +214,12 @@ func TestCreateDraftServiceErrors(t *testing.T) {
 		{security.ErrUnavailable, http.StatusServiceUnavailable, false},
 		{errors.New("syntax error near canary-secret"), http.StatusInternalServerError, false},
 	} {
-		w := serve(testMigrationUI(t, &fakeMigrations{err: scenario.err}, &fakeAuthorizer{}), formRequest("POST", migrationsPath, url.Values{"title": {"Judul"}, "sql": {"SELECT 1;"}}))
+		w := serve(testMigrationUI(t, &fakeMigrations{err: scenario.err}, &fakeAuthorizer{}), protectedRequest("POST", migrationsPath, url.Values{"title": {"Judul"}, "sql": {"SELECT 1;"}}))
 		if w.Code != scenario.status || strings.Contains(w.Body.String(), "<textarea") != scenario.editor || strings.Contains(w.Body.String(), "canary-secret") {
 			t.Fatal("create failure handled incorrectly")
 		}
 	}
-	w := serve(testMigrationUI(t, &fakeMigrations{createdID: "bukan-uuid"}, &fakeAuthorizer{}), formRequest("POST", migrationsPath, url.Values{"title": {"Judul"}, "sql": {"SELECT 1;"}}))
+	w := serve(testMigrationUI(t, &fakeMigrations{createdID: "bukan-uuid"}, &fakeAuthorizer{}), protectedRequest("POST", migrationsPath, url.Values{"title": {"Judul"}, "sql": {"SELECT 1;"}}))
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatal("invalid created id used in redirect")
 	}
@@ -227,18 +228,18 @@ func TestCreateDraftServiceErrors(t *testing.T) {
 func TestUpdateDraftPassesRevisionAndKeepsInputOnConflict(t *testing.T) {
 	migrations := &fakeMigrations{}
 	form := url.Values{"title": {"Judul"}, "sql": {"SELECT 2;"}, "revision": {"3"}}
-	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), formRequest("POST", migrationPath, form))
+	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), protectedRequest("POST", migrationPath, form))
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != migrationPath || migrations.revision != 3 || migrations.migrationID != testMigrationID {
 		t.Fatal("update not passed with revision")
 	}
-	w = serve(testMigrationUI(t, &fakeMigrations{err: security.ErrConflict}, &fakeAuthorizer{}), formRequest("POST", migrationPath, form))
+	w = serve(testMigrationUI(t, &fakeMigrations{err: security.ErrConflict}, &fakeAuthorizer{}), protectedRequest("POST", migrationPath, form))
 	body := w.Body.String()
 	if w.Code != http.StatusConflict || !strings.Contains(body, "SELECT 2;") || !strings.Contains(body, `name="revision" value="3"`) || !strings.Contains(body, "Data berubah") {
 		t.Fatal("conflict lost user input or revision")
 	}
 	for _, revision := range []string{"", "0", "x"} {
 		migrations := &fakeMigrations{}
-		w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), formRequest("POST", migrationPath, url.Values{"title": {"Judul"}, "sql": {"SELECT 2;"}, "revision": {revision}}))
+		w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), protectedRequest("POST", migrationPath, url.Values{"title": {"Judul"}, "sql": {"SELECT 2;"}, "revision": {revision}}))
 		if w.Code != http.StatusBadRequest || migrations.calls != 0 {
 			t.Fatal("invalid revision reached service")
 		}
@@ -247,16 +248,16 @@ func TestUpdateDraftPassesRevisionAndKeepsInputOnConflict(t *testing.T) {
 
 func TestExecuteRedirectsAndPropagatesFailure(t *testing.T) {
 	migrations := &fakeMigrations{}
-	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), formRequest("POST", executePath, url.Values{"revision": {"3"}}))
+	w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), protectedRequest("POST", executePath, url.Values{"revision": {"3"}}))
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != migrationPath || migrations.revision != 3 {
 		t.Fatal("execute not dispatched")
 	}
-	w = serve(testMigrationUI(t, &fakeMigrations{err: security.ErrConflict}, &fakeAuthorizer{}), formRequest("POST", executePath, url.Values{"revision": {"3"}}))
+	w = serve(testMigrationUI(t, &fakeMigrations{err: security.ErrConflict}, &fakeAuthorizer{}), protectedRequest("POST", executePath, url.Values{"revision": {"3"}}))
 	if w.Code != http.StatusConflict {
 		t.Fatal("stale execute not reported")
 	}
 	migrations = &fakeMigrations{}
-	w = serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), formRequest("POST", executePath, url.Values{"revision": {"3"}, "sql": {"DROP TABLE x;"}}))
+	w = serve(testMigrationUI(t, migrations, &fakeAuthorizer{}), protectedRequest("POST", executePath, url.Values{"revision": {"3"}, "sql": {"DROP TABLE x;"}}))
 	if w.Code != http.StatusBadRequest || migrations.calls != 0 {
 		t.Fatal("execute accepted extra SQL field")
 	}
@@ -274,7 +275,7 @@ func TestViewOnlyCannotChangeMigrations(t *testing.T) {
 		{"POST", executePath, url.Values{"revision": {"3"}}},
 	} {
 		migrations := &fakeMigrations{}
-		w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{denied: viewOnly}), formRequest(scenario.method, scenario.target, scenario.form))
+		w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{denied: viewOnly}), protectedRequest(scenario.method, scenario.target, scenario.form))
 		if w.Code != http.StatusForbidden || migrations.calls != 0 {
 			t.Fatal("view only user changed migration: " + scenario.method + " " + scenario.target)
 		}
@@ -284,7 +285,7 @@ func TestViewOnlyCannotChangeMigrations(t *testing.T) {
 func TestMigrationViewsDeniedWithoutGrant(t *testing.T) {
 	for _, target := range []string{migrationsPath, migrationPath} {
 		migrations := &fakeMigrations{}
-		w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{databaseErr: security.ErrForbidden}), formRequest("GET", target, nil))
+		w := serve(testMigrationUI(t, migrations, &fakeAuthorizer{databaseErr: security.ErrForbidden}), protectedRequest("GET", target, nil))
 		if w.Code != http.StatusForbidden || migrations.calls != 0 {
 			t.Fatal("migration view served without grant: " + target)
 		}

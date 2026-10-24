@@ -47,3 +47,14 @@ func formText(values url.Values, field string, maxRunes int) (string, bool) {
 	value := strings.TrimSpace(values.Get(field))
 	return value, value != "" && utf8.ValidString(value) && utf8.RuneCountInString(value) <= maxRunes
 }
+
+func boundedQueryInt(values url.Values, key string, fallback, min, max int) (int, error) {
+	if !values.Has(key) {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(values.Get(key))
+	if err != nil || n < min || n > max {
+		return 0, security.ErrInvalidInput
+	}
+	return n, nil
+}

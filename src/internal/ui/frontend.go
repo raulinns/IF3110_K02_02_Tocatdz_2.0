@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -11,8 +12,7 @@ type FrontendConfig struct {
 	Security   security.HTTPMiddlewareConfig
 	Viewer     explorer.Viewer
 	Authorizer security.Authorizer
-	// Opsional sampai service-nya tersedia; selama nil route dan link-nya tidak dipasang
-	Migrations MigrationService
+	Migrations migration.Application
 	Admin      *AdminServices
 }
 
@@ -59,8 +59,12 @@ func NewFrontend(cfg FrontendConfig) (*Frontend, error) {
 	}
 	routes := []security.RouteRegistrar{auth, databases, tables, static}
 	var features Features
-	if !missingDependency(cfg.Migrations) {
-		migrations, err := NewMigrationUI(cfg.Migrations, guard, access, renderer)
+	if cfg.Migrations != nil {
+		adapter, err := NewMigrationAdapter(cfg.Migrations)
+		if err != nil {
+			return nil, err
+		}
+		migrations, err := NewMigrationUI(adapter, guard, access, renderer)
 		if err != nil {
 			return nil, err
 		}

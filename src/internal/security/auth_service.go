@@ -380,7 +380,11 @@ func (s *AuthService) LogoutWithCheck(ctx context.Context, cookie Secret, check 
 	now := s.deps.Clock.Now().UTC()
 	if validSession(snapshot, now, s.deps.Policy) {
 		_, matched := tokenMatches(snapshot.Session, digest, now)
-		if matched && check != nil {
+		// Token lama yang lewat grace period tidak boleh mencabut session yang masih aktif.
+		if !matched {
+			return nil
+		}
+		if check != nil {
 			candidate := snapshot.Session
 			if snapshot.Account.AuthVersion > candidate.AuthVersion {
 				if candidate.CSRFEpoch == ^uint64(0) {

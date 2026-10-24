@@ -11,14 +11,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/testutil/migrationtest"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/web"
 )
 
-// Pengganti service migration/admin dan grant group supaya alur HTTP lengkap bisa diuji tanpa PostgreSQL
+// Persistence, target SQL, dan admin masih fixture; service migration memakai core F4 asli.
 type grantFixture struct {
 	store  *memoryStore
 	mu     sync.Mutex
@@ -32,88 +33,6 @@ func (g *grantFixture) AccessForDatabase(_ context.Context, user, database secur
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return security.AccessSnapshot{Account: account, GroupAccess: append([]security.DatabaseAccess(nil), g.grants[database]...)}, nil
-}
-
-type memoryMigration struct {
-	databaseID security.ID
-	detail     MigrationDetail
-}
-
-type memoryMigrations struct {
-	mu      sync.Mutex
-	records map[security.ID]memoryMigration
-	order   []security.ID
-	version int64
-}
-
-func (m *memoryMigrations) find(request DatabaseRequest, id security.ID) (memoryMigration, error) {
-	record, ok := m.records[id]
-	if !ok || record.databaseID != request.DatabaseID {
-		return memoryMigration{}, security.ErrNotFound
-	}
-	return record, nil
-}
-
-func (m *memoryMigrations) History(_ context.Context, request DatabaseRequest) ([]MigrationSummary, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var result []MigrationSummary
-	for _, id := range m.order {
-		if record := m.records[id]; record.databaseID == request.DatabaseID {
-			result = append(result, record.detail.MigrationSummary)
-		}
-	}
-	return result, nil
-}
-
-func (m *memoryMigrations) Migration(_ context.Context, request DatabaseRequest, id security.ID) (MigrationDetail, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	record, err := m.find(request, id)
-	return record.detail, err
-}
-
-func (m *memoryMigrations) CreateDraft(_ context.Context, request DatabaseRequest, draft MigrationDraft) (security.ID, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	id := []security.ID{testMigrationID, "e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a8b"}[len(m.order)]
-	m.records[id] = memoryMigration{databaseID: request.DatabaseID, detail: MigrationDetail{
-		MigrationSummary: MigrationSummary{ID: id, Title: draft.Title, Status: StatusDraft, UpdatedAt: time.Now()},
-		SQL:              draft.SQL, Revision: 1,
-	}}
-	m.order = append(m.order, id)
-	return id, nil
-}
-
-func (m *memoryMigrations) UpdateDraft(_ context.Context, request DatabaseRequest, id security.ID, draft MigrationDraft, revision uint64) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	record, err := m.find(request, id)
-	if err != nil {
-		return err
-	}
-	if record.detail.Status != StatusDraft || record.detail.Revision != revision {
-		return security.ErrConflict
-	}
-	record.detail.Title, record.detail.SQL, record.detail.Revision = draft.Title, draft.SQL, revision+1
-	m.records[id] = record
-	return nil
-}
-
-func (m *memoryMigrations) Execute(_ context.Context, request DatabaseRequest, id security.ID, revision uint64) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	record, err := m.find(request, id)
-	if err != nil {
-		return err
-	}
-	if record.detail.Status != StatusDraft || record.detail.Revision != revision {
-		return security.ErrConflict
-	}
-	m.version++
-	record.detail.Status, record.detail.Version, record.detail.Actor, record.detail.ExecutedAt = StatusApplied, m.version, "budi", time.Now()
-	m.records[id] = record
-	return nil
 }
 
 type memoryAdmin struct {
@@ -197,7 +116,7 @@ type featureIntegration struct {
 	handler    http.Handler
 	store      *memoryStore
 	grants     *grantFixture
-	migrations *memoryMigrations
+	migrations *migrationtest.Fixture
 	admin      *memoryAdmin
 }
 
@@ -222,9 +141,19 @@ func newFeatureIntegration(t *testing.T, platformAdmin bool) *featureIntegration
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := &featureIntegration{store: store, grants: grants, migrations: &memoryMigrations{records: map[security.ID]memoryMigration{}}, admin: &memoryAdmin{}}
+	env := &featureIntegration{store: store, grants: grants, migrations: migrationtest.New(), admin: &memoryAdmin{}}
+	env.migrations.Check = func(ctx context.Context, req migration.Request) error {
+		return authorizer.RequireDatabase(ctx, req.Principal, req.DatabaseID, security.ActionExecuteMigration)
+	}
+	migrations, err := migration.NewService(migration.Config{
+		Repository: env.migrations, Coordinator: env.migrations, Validator: migration.NewPostgreSQLValidator(),
+		Authorizer: authorizer, Accounts: store, IDs: security.NewTokenGenerator(), Clock: security.SystemClock{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	frontend, err := NewFrontend(FrontendConfig{
-		Security: cfg, Viewer: viewer, Authorizer: authorizer, Migrations: env.migrations,
+		Security: cfg, Viewer: viewer, Authorizer: authorizer, Migrations: migrations,
 		Admin: &AdminServices{Users: env.admin, Groups: env.admin, Connections: env.admin, Grants: env.admin},
 	})
 	if err != nil {
@@ -258,12 +187,12 @@ func TestFrontendMigrationLifecycleIntegration(t *testing.T) {
 	cookie := loginFrontend(t, env.handler)
 	base := "/databases/" + string(testDatabaseB) + "/migrations"
 	token := csrfFrom(t, env.get(base+"/new", cookie))
-	if w := env.post(base, url.Values{"title": {"Buat tabel"}, "sql": {"CREATE TABLE a (id int);"}}, cookie); w.Code != http.StatusForbidden || len(env.migrations.order) != 0 {
+	if w := env.post(base, url.Values{"title": {"Buat tabel"}, "sql": {"CREATE TABLE a (id int);"}}, cookie); w.Code != http.StatusForbidden || len(env.migrations.Records()) != 0 {
 		t.Fatal("create without CSRF token accepted")
 	}
 	w := env.post(base, url.Values{"csrf_token": {token}, "title": {"Buat tabel"}, "sql": {"CREATE TABLE a (id int);"}}, cookie)
-	detail := base + "/" + string(testMigrationID)
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != detail {
+	detail := w.Header().Get("Location")
+	if w.Code != http.StatusSeeOther || !strings.HasPrefix(detail, base+"/") || !security.ValidID(security.ID(strings.TrimPrefix(detail, base+"/"))) {
 		t.Fatal("draft not created")
 	}
 	w = env.get(detail, cookie)
@@ -303,14 +232,19 @@ func TestFrontendMigrationAccessIntegration(t *testing.T) {
 	if w := env.get(viewOnly+"/new", cookie); w.Code != http.StatusForbidden {
 		t.Fatal("view only user opened editor")
 	}
-	if w := env.post(viewOnly, url.Values{"csrf_token": {token}, "title": {"x"}, "sql": {"DROP TABLE users;"}}, cookie); w.Code != http.StatusForbidden || len(env.migrations.order) != 0 {
+	if w := env.post(viewOnly, url.Values{"csrf_token": {token}, "title": {"x"}, "sql": {"DROP TABLE users;"}}, cookie); w.Code != http.StatusForbidden || len(env.migrations.Records()) != 0 {
 		t.Fatal("view only user created migration")
 	}
-	if w := env.post("/databases/"+string(testDatabaseB)+"/migrations", url.Values{"csrf_token": {token}, "title": {"x"}, "sql": {"SELECT 1;"}}, cookie); w.Code != http.StatusSeeOther {
+	created := env.post("/databases/"+string(testDatabaseB)+"/migrations", url.Values{"csrf_token": {token}, "title": {"x"}, "sql": {"SELECT 1;"}}, cookie)
+	if created.Code != http.StatusSeeOther {
 		t.Fatal("editor could not create migration")
 	}
 	// Migration milik database B tidak boleh terbaca lewat URL database A
-	if w := env.get(viewOnly+"/"+string(testMigrationID), cookie); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "SELECT 1;") {
+	records := env.migrations.Records()
+	if len(records) != 1 {
+		t.Fatal("draft missing from ledger")
+	}
+	if w := env.get(viewOnly+"/"+string(records[0].ID), cookie); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "SELECT 1;") {
 		t.Fatal("migration readable through another database")
 	}
 	if w := env.get("/databases/"+string(testDatabaseC)+"/migrations", cookie); w.Code != http.StatusForbidden {

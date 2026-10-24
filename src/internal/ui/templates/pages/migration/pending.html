@@ -1,0 +1,7 @@
+{{define "content"}}{{with .Content}}
+<section class="status-page">
+ <h1>Hasil migration belum pasti</h1>
+ <p>Jangan jalankan ulang SQL ini. Sistem perlu memeriksa hasil transaksi sebelum eksekusi berikutnya.</p>
+ <a class="button button-ghost" href="{{.DetailHref}}">Lihat status migration</a>
+</section>
+{{end}}{{end}}
