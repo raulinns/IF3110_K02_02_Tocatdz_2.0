@@ -1,1 +1,32 @@
-{{define "content"}}{{end}}
+{{define "content"}}{{with .Content}}
+<section>
+	<h1>Database</h1>
+	{{if .Databases}}
+	<div class="table-wrap">
+		<table class="table">
+			<thead>
+				<tr>
+					<th scope="col">Nama</th>
+					<th scope="col">Akses</th>
+					<th scope="col">Tindakan</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Databases}}
+				<tr>
+					<td class="mono">{{.Name}}</td>
+					<td>{{.AccessLabel}}</td>
+					<td class="table-actions">
+						<a href="/databases/{{.ID}}/schema">Schema</a>
+						<a href="/databases/{{.ID}}/migrations">Migration</a>
+					</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+	{{else}}
+	<p class="lead">Anda belum memiliki akses ke database mana pun. Hubungi admin platform untuk meminta akses.</p>
+	{{end}}
+</section>
+{{end}}{{end}}
