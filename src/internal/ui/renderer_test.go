@@ -53,6 +53,28 @@ func TestRendererLoadsEmbeddedPages(t *testing.T) {
 	}
 }
 
+func TestBrandTemplatesUseStickerLogo(t *testing.T) {
+	for _, name := range []string{
+		"templates/pages/login.html",
+		"templates/partials/sidebar.html",
+	} {
+		content, err := assets.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		template := string(content)
+		if !strings.Contains(template, `/static/img/stiker-if.png`) {
+			t.Errorf("%s does not use the sticker logo", name)
+		}
+		if strings.Contains(template, `/static/img/logo.svg`) {
+			t.Errorf("%s still uses the placeholder logo", name)
+		}
+		if !strings.Contains(template, `alt="IF Tidur, Besok Balik Nubes"`) {
+			t.Errorf("%s does not provide the logo alternative text", name)
+		}
+	}
+}
+
 func TestRendererEscapesUntrustedContent(t *testing.T) {
 	r := testRenderer(t, `{{define "content"}}{{.Content}}{{end}}`)
 	w := httptest.NewRecorder()

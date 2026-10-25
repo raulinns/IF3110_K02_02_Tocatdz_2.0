@@ -7,6 +7,28 @@ import (
 	"testing"
 )
 
+func TestStickerLogoIsServedAsPNG(t *testing.T) {
+	static, err := NewStaticAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	static.RegisterRoutes(mux)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/static/img/stiker-if.png", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("sticker logo status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if contentType := w.Header().Get("Content-Type"); contentType != "image/png" {
+		t.Fatalf("sticker logo content type = %q, want image/png", contentType)
+	}
+	if !strings.HasPrefix(w.Body.String(), "\x89PNG\r\n\x1a\n") {
+		t.Fatal("sticker logo is not a PNG file")
+	}
+}
+
 func TestStaticAssetsServeOnlyFiles(t *testing.T) {
 	static, err := NewStaticAssets()
 	if err != nil {
