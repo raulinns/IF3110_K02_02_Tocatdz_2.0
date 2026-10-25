@@ -33,25 +33,31 @@
 </div>
 {{end}}
 {{end}}{{if and .Content .Content.Editable}}
-<div class="row g-4">
-	<div class="col-lg-8">
-		<div class="card mb-0">
-			<div class="card-header"><i class="fas fa-pen-to-square text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Ubah draft</h2></div>
-			<div class="card-body">{{template "migration-form" .}}</div>
-		</div>
-	</div>
-	<div class="col-lg-4">
-		<div class="card mb-0">
-			<div class="card-header"><i class="fas fa-play text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Jalankan</h2></div>
-			<div class="card-body">
-				<p class="text-muted small">SQL dijalankan dalam satu transaction: commit jika seluruh perintah berhasil, rollback jika ada yang gagal. Simpan perubahan terlebih dahulu sebelum menjalankan.</p>
-				<form method="post" action="{{.Content.ExecuteAction}}" data-confirm="Jalankan migration ini? SQL akan dieksekusi dalam satu transaction pada database target. Riwayat yang sudah dijalankan tidak bisa diubah.">
-					<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-					<input type="hidden" name="revision" value="{{.Content.Migration.Revision}}">
-					<button type="submit" class="btn btn-primary w-100"><i class="fas fa-play" aria-hidden="true"></i>Jalankan migration</button>
-				</form>
-			</div>
-		</div>
-	</div>
-</div>
+<section class="narrow">
+	<h2>Ubah draft</h2>
+	{{template "migration-form" .}}
+</section>
+{{if .Content.CanPlan}}
+<section class="narrow">
+	<h2>Analisis query sebelum eksekusi</h2>
+	<p>Simpan perubahan draft terlebih dahulu. Pilih nomor statement SQL, dihitung dari 1. Statement sebelumnya tidak dijalankan; tabel dan kolom yang dirujuk harus sudah ada.</p>
+	<p>EXPLAIN menampilkan estimasi SELECT, INSERT, UPDATE, atau DELETE. EXPLAIN ANALYZE menjalankan SELECT baca saja untuk mengukur waktu dan jumlah baris. Analisis tidak mengubah status atau versi migration.</p>
+	<form method="post" action="{{.Content.PlanAction}}" class="form">
+		<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+		<input type="hidden" name="revision" value="{{.Content.Migration.Revision}}">
+		<div class="field"><label for="plan-statement">Nomor statement</label><input id="plan-statement" name="statement" type="number" value="1" min="1" max="1000" required></div>
+		<button type="submit" name="mode" value="explain" class="button button-ghost">EXPLAIN</button>
+		<button type="submit" name="mode" value="analyze" class="button button-ghost">EXPLAIN ANALYZE (SELECT)</button>
+	</form>
+</section>
+{{end}}
+<section class="narrow">
+	<h2>Jalankan</h2>
+	<p class="lead">SQL dijalankan dalam satu transaction: commit jika seluruh perintah berhasil, rollback jika ada yang gagal. Simpan perubahan terlebih dahulu sebelum menjalankan.</p>
+	<form method="post" action="{{.Content.ExecuteAction}}">
+		<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+		<input type="hidden" name="revision" value="{{.Content.Migration.Revision}}">
+		<button type="submit" class="button button-primary">Jalankan migration</button>
+	</form>
+</section>
 {{end}}{{end}}

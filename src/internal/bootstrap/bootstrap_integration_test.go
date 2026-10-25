@@ -3,15 +3,12 @@ package bootstrap
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -21,6 +18,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/config"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/postgres"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/testutil/pgtest"
 )
 
 const (
@@ -37,35 +35,7 @@ var (
 
 func createDatabase(t *testing.T) string {
 	t.Helper()
-	raw := os.Getenv("TEST_DATABASE_URL")
-	if raw == "" {
-		t.Skip("TEST_DATABASE_URL tidak diset; end-to-end test dilewati")
-	}
-	server, err := url.Parse(raw)
-	if err != nil {
-		t.Fatal("TEST_DATABASE_URL tidak valid")
-	}
-	suffix := make([]byte, 6)
-	_, _ = rand.Read(suffix)
-	name := "tocatdz_e2e_" + hex.EncodeToString(suffix)
-	conn, err := pgx.Connect(context.Background(), server.String())
-	if err != nil {
-		t.Fatal("cannot connect to TEST_DATABASE_URL")
-	}
-	defer conn.Close(context.Background())
-	if _, err := conn.Exec(context.Background(), "CREATE DATABASE "+name); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		conn, err := pgx.Connect(context.Background(), server.String())
-		if err == nil {
-			_, _ = conn.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
-			conn.Close(context.Background())
-		}
-	})
-	copy := *server
-	copy.Path = "/" + name
-	return copy.String()
+	return pgtest.Database(t, "TEST_DATABASE_URL")
 }
 
 func key(fill byte) security.Secret {
@@ -73,8 +43,9 @@ func key(fill byte) security.Secret {
 }
 
 type e2e struct {
-	handler http.Handler
-	target  *pgx.Conn
+	handler  http.Handler
+	target   *pgx.Conn
+	platform *Platform
 }
 
 func newE2E(t *testing.T) *e2e {
@@ -105,7 +76,7 @@ func newE2E(t *testing.T) *e2e {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return &e2e{handler: platform.Handler, target: target}
+	return &e2e{handler: platform.Handler, target: target, platform: platform}
 }
 
 func (e *e2e) do(method, target string, form url.Values, cookie string) *httptest.ResponseRecorder {

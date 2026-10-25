@@ -39,7 +39,7 @@ func TestPermissionMatrix(t *testing.T) {
 		security.ActionViewHistory, security.ActionViewMigration,
 	}
 	writeActions := []security.DatabaseAction{
-		security.ActionCreateMigration, security.ActionUpdateMigration, security.ActionExecuteMigration,
+		security.ActionCreateMigration, security.ActionUpdateMigration, security.ActionExecuteMigration, security.ActionAnalyzeMigration,
 	}
 	for _, access := range []security.DatabaseAccess{security.AccessNone, security.AccessViewOnly, security.AccessViewEdit, "admin", ""} {
 		for _, action := range append(append([]security.DatabaseAction{}, readActions...), writeActions...) {

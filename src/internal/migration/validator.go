@@ -56,48 +56,104 @@ func NewPostgreSQLValidator() *PostgreSQLValidator {
 }
 
 func (v *PostgreSQLValidator) Validate(ctx context.Context, sql security.Secret) error {
+	_, err := v.parse(ctx, sql)
+	return err
+}
+
+type parsedStatement struct {
+	Stmt     map[string]any `json:"stmt"`
+	Location int            `json:"stmt_location"`
+	Length   int            `json:"stmt_len"`
+}
+
+func (v *PostgreSQLValidator) parse(ctx context.Context, sql security.Secret) ([]parsedStatement, error) {
 	if v == nil || v.gate == nil {
-		return security.ErrUnavailable
+		return nil, security.ErrUnavailable
 	}
 	if ValidateDraft(Draft{Title: "SQL", SQL: sql}) != nil {
-		return security.ErrInvalidInput
+		return nil, security.ErrInvalidInput
 	}
 	select {
 	case <-ctx.Done():
-		return security.ErrUnavailable
+		return nil, security.ErrUnavailable
 	case <-v.gate:
 	}
 	defer func() { v.gate <- struct{}{} }()
 	if ctx.Err() != nil {
-		return security.ErrUnavailable
+		return nil, security.ErrUnavailable
 	}
 	tree, err := pgquery.ParseToJSON(sql.Reveal())
 	if ctx.Err() != nil {
-		return security.ErrUnavailable
+		return nil, security.ErrUnavailable
 	}
 	if err != nil {
-		return SQLRejection("syntax")
+		return nil, SQLRejection("syntax")
 	}
 	var parsed struct {
-		Stmts []struct {
-			Stmt map[string]any `json:"stmt"`
-		} `json:"stmts"`
+		Stmts []parsedStatement `json:"stmts"`
 	}
 	if len(tree) > 32<<20 || json.Unmarshal([]byte(tree), &parsed) != nil {
-		return security.ErrInvalidInput
+		return nil, security.ErrInvalidInput
 	}
 	if len(parsed.Stmts) == 0 || len(parsed.Stmts) > 1000 {
-		return SQLRejection("unsupported")
+		return nil, SQLRejection("unsupported")
 	}
 	for _, stmt := range parsed.Stmts {
 		if len(stmt.Stmt) != 1 {
-			return SQLRejection("unsupported")
+			return nil, SQLRejection("unsupported")
 		}
 		if err := checkAST(ctx, stmt.Stmt, 0); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return parsed.Stmts, nil
+}
+
+func (v *PostgreSQLValidator) PlanStatement(ctx context.Context, sql security.Secret, index int, analyze bool) (security.Secret, error) {
+	statements, err := v.parse(ctx, sql)
+	if err != nil {
+		return security.Secret{}, err
+	}
+	if index < 1 || index > len(statements) {
+		return security.Secret{}, PlanRejection("statement")
+	}
+	stmt := statements[index-1]
+	selectOnly := stmt.Stmt["SelectStmt"] != nil
+	if !selectOnly && stmt.Stmt["InsertStmt"] == nil && stmt.Stmt["UpdateStmt"] == nil && stmt.Stmt["DeleteStmt"] == nil {
+		return security.Secret{}, PlanRejection("statement")
+	}
+	if analyze && (!selectOnly || hasMutation(stmt.Stmt)) {
+		return security.Secret{}, PlanRejection("analyze")
+	}
+	start, end := stmt.Location, len(sql.Reveal())
+	if stmt.Length > 0 {
+		end = start + stmt.Length
+	}
+	if start < 0 || end <= start || end > len(sql.Reveal()) {
+		return security.Secret{}, security.ErrInvalidInput
+	}
+	return security.NewSecret(sql.Reveal()[start:end]), nil
+}
+
+func hasMutation(value any) bool {
+	switch node := value.(type) {
+	case map[string]any:
+		for key, child := range node {
+			if key == "InsertStmt" || key == "UpdateStmt" || key == "DeleteStmt" {
+				return true
+			}
+			if hasMutation(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range node {
+			if hasMutation(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 var allowedStatements = map[string]bool{

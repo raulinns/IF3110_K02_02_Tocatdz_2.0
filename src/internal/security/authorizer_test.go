@@ -27,6 +27,10 @@ func TestBackendAuthorizerPermissionMatrix(t *testing.T) {
 		if wantEdit && err != nil || !wantEdit && !errors.Is(err, ErrForbidden) {
 			t.Fatal("incorrect effective group access")
 		}
+		err = authorizer.RequireDatabase(ctx, result.Principal, otherID, ActionAnalyzeMigration)
+		if wantEdit && err != nil || !wantEdit && !errors.Is(err, ErrForbidden) {
+			t.Fatal("incorrect analysis permission")
+		}
 	}
 	record := f.store.accounts[testUserID]
 	record.Account.PlatformAdmin = true

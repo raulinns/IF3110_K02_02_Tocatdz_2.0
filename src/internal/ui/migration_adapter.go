@@ -57,3 +57,15 @@ func (a *MigrationAdapter) Execute(ctx context.Context, req DatabaseRequest, id 
 	}
 	return nil
 }
+
+func (a *MigrationAdapter) SupportsPlans() bool {
+	planner, ok := a.service.(migration.PlanApplication)
+	return ok && planner.SupportsPlans()
+}
+func (a *MigrationAdapter) Analyze(ctx context.Context, req DatabaseRequest, id security.ID, options migration.PlanOptions) (migration.PlanResult, error) {
+	planner, ok := a.service.(migration.PlanApplication)
+	if !ok || !planner.SupportsPlans() {
+		return migration.PlanResult{}, security.ErrUnavailable
+	}
+	return planner.Analyze(ctx, migrationRequest(req), id, options)
+}

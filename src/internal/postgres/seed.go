@@ -39,6 +39,13 @@ func upsertID(ctx context.Context, tx pgx.Tx, ids idSource, insert, lookup strin
 
 // Seed idempoten: menjalankannya berulang tidak menggandakan data dan tidak mengganti password yang sudah ada.
 func Seed(ctx context.Context, pool *pgxpool.Pool, box *SecretBox, ids idSource, input SeedInput) error {
+	if input.TargetName != "" && !input.TargetDSN.Empty() {
+		dsn, err := PrepareManagedTarget(ctx, pool, input.TargetDSN, box)
+		if err != nil {
+			return err
+		}
+		input.TargetDSN = dsn
+	}
 	return withTx(ctx, pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		adminID, err := upsertID(ctx, tx, ids, "INSERT INTO users (id, username, password_hash, platform_admin) VALUES ($1, $2, $3, true) ON CONFLICT (username) DO NOTHING",
 			"SELECT id::text FROM users WHERE username = $1", input.AdminUsername, input.AdminHash.Reveal())
@@ -57,7 +64,8 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, box *SecretBox, ids idSource,
 			return nil
 		}
 		var databaseID string
-		err = tx.QueryRow(ctx, "SELECT id::text FROM managed_databases WHERE name = $1", input.TargetName).Scan(&databaseID)
+		var previous []byte
+		err = tx.QueryRow(ctx, "SELECT id::text,dsn_ciphertext FROM managed_databases WHERE name = $1 FOR UPDATE", input.TargetName).Scan(&databaseID, &previous)
 		if errors.Is(err, pgx.ErrNoRows) {
 			id, err := ids.GenerateID()
 			if err != nil {
@@ -72,6 +80,25 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, box *SecretBox, ids idSource,
 			}
 			databaseID = string(id)
 		} else if err != nil {
+			return mapError(err)
+		}
+		if len(previous) > 0 {
+			old, err := box.Open(security.ID(databaseID), previous)
+			if err != nil {
+				return err
+			}
+			if old.Reveal() != input.TargetDSN.Reveal() {
+				same, err := sameTargetDSN(ctx, old, input.TargetDSN)
+				if err != nil || !same {
+					return security.ErrConflict
+				}
+			}
+		}
+		sealed, err := box.Seal(security.ID(databaseID), input.TargetDSN)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, "UPDATE managed_databases SET dsn_ciphertext=$2 WHERE id=$1", databaseID, sealed); err != nil {
 			return mapError(err)
 		}
 		groups := []struct {

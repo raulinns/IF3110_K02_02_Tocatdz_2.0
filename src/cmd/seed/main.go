@@ -95,9 +95,17 @@ func run() error {
 			return err
 		}
 	}
+	box, err := postgres.NewSecretBox(sec.ConnectionKey)
+	if err != nil {
+		return err
+	}
 	if targetURL := strings.TrimSpace(os.Getenv("SEED_TARGET_DATABASE_URL")); targetURL != "" {
-		input.TargetName, input.TargetDSN = valueOr(os.Getenv("SEED_TARGET_NAME"), "demo"), security.NewSecret(targetURL)
-		conn, err := pgx.Connect(ctx, targetURL)
+		runtimeDSN, err := postgres.PrepareManagedTarget(ctx, pool, security.NewSecret(targetURL), box)
+		if err != nil {
+			return err
+		}
+		input.TargetName, input.TargetDSN = valueOr(os.Getenv("SEED_TARGET_NAME"), "demo"), runtimeDSN
+		conn, err := pgx.Connect(ctx, runtimeDSN.Reveal())
 		if err != nil {
 			return errors.New("SEED_TARGET_DATABASE_URL tidak bisa dihubungi")
 		}
@@ -106,10 +114,6 @@ func run() error {
 		if err != nil {
 			return errors.New("gagal membuat data contoh di database target")
 		}
-	}
-	box, err := postgres.NewSecretBox(sec.ConnectionKey)
-	if err != nil {
-		return err
 	}
 	return postgres.Seed(ctx, pool, box, security.NewTokenGenerator(), input)
 }

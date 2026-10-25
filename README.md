@@ -25,6 +25,7 @@ Semua perintah `go` dijalankan dari folder `src/`.
    ```
    go run ./cmd/seed
    ```
+   Seed memakai kredensial pemilik target untuk setup, lalu menyimpan DSN akun SQL terbatas yang dibuat otomatis. Akun superuser tidak dipakai untuk menjalankan SQL migration. Untuk instalasi lokal, akun setup perlu superuser dan extension `pgcrypto` harus tersedia. Gunakan database target khusus aplikasi; setup memindahkan kepemilikan objek aplikasi milik akun setup ke akun SQL tersebut.
 4. **Jalankan server:**
    ```
    go run ./cmd/server
@@ -90,12 +91,26 @@ baru untuk menjalankan aplikasi jika sebelumnya hanya memakai schema foundation.
 
 Registry/driver dan reader MySQL tersedia pada paket foundation, tetapi UI admin
 serta executor aplikasi saat ini tetap PostgreSQL. Ini belum merupakan bonus
-MySQL lengkap. Schema diff/generation dan EXPLAIN/ANALYZE juga belum tersedia.
+MySQL lengkap. Schema diff/generation belum tersedia. Bonus query execution plan
+tersedia pada detail draft migration: EXPLAIN untuk SELECT/INSERT/UPDATE/DELETE,
+dan EXPLAIN ANALYZE untuk SELECT baca saja.
 
-Receipt migration saat ini dibuat oleh role koneksi target yang sama dengan
-eksekusi SQL. Pemisahan privilege/role receipt masih perlu dikerjakan sebelum
-menganggap proteksi receipt memenuhi seluruh kontrak hardening; parser SQL
-bukan pengganti isolasi privilege database.
+Receipt migration dimiliki role `NOLOGIN` yang terpisah dari akun SQL target.
+Akun SQL tidak bisa membaca kunci, mengubah tabel receipt, atau menjadi pemiliknya.
+Penulisan receipt melalui fungsi terbatas membutuhkan HMAC yang terikat target
+dan identitas eksekusi; receipt dan SQL di-commit dalam transaksi yang sama.
+Recovery memakai advisory lock transaksi untuk memastikan transaksi lama benar-benar
+selesai, lalu membaca receipt tanpa menjalankan ulang SQL. Worker memeriksa status
+`pending` saat startup dan setiap 30 detik.
+
+Setelah memperbarui dari versi yang menyimpan DSN superuser, hentikan server,
+jalankan seed lagi dengan nama dan database target yang sama, lalu hidupkan server.
+Seed mempertahankan akun, password, ID database, dan riwayat; target fisik yang
+berbeda dengan nama lama ditolak. Jangan mengganti kunci enkripsi pada `.env`.
+
+Untuk menambah database target lain melalui halaman admin, ikuti setup
+`cmd/target-init` dan checklist pada [panduan testing wajib](docs/testing-wajib.md).
+Database metadata platform selalu ditolak sebagai target.
 
 Test PostgreSQL membuat database sementara per kasus, termasuk test foundation,
 sehingga schema kedua jalur tidak bercampur. Aktifkan `TEST_DATABASE_URL` untuk
@@ -109,6 +124,17 @@ $env:TEST_DATABASE_URL = 'postgres://app:app@localhost:5433/postgres?sslmode=dis
 $env:TEST_POSTGRES_TARGET_DSN = $env:TEST_DATABASE_URL
 go test -race -tags=argon2integration -count=1 ./...
 ```
+
+## Bonus query execution plan
+
+Panduan bonus: [testing query execution plan](docs/testing-query-plan.md).
+Analisis memerlukan View + Edit, memakai revision SQL draft tersimpan dan
+transaksi read-only, tidak memberi versi migration atau menulis receipt.
+Untuk script beberapa statement, pilih nomor statement; DDL sebelumnya tidak
+dijalankan. ANALYZE query mutasi ditolak agar preview tidak memicu sequence,
+trigger, atau efek lain yang belum tentu dapat dipulihkan oleh rollback.
+Tidak ada perubahan schema metadata atau kunci `.env`; restart server Go setelah
+memperbarui kode untuk memakai fitur ini.
 
 ## Struktur
 

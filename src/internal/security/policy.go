@@ -22,6 +22,7 @@ const (
 	ActionCreateMigration  DatabaseAction = "migration.create"
 	ActionUpdateMigration  DatabaseAction = "migration.update"
 	ActionExecuteMigration DatabaseAction = "migration.execute"
+	ActionAnalyzeMigration DatabaseAction = "migration.analyze"
 )
 
 func EffectiveAccess(grants []DatabaseAccess) (DatabaseAccess, error) {
@@ -49,7 +50,7 @@ func Allows(access DatabaseAccess, action DatabaseAction) bool {
 	switch action {
 	case ActionViewSchema, ActionViewData, ActionViewHistory, ActionViewMigration:
 		return true
-	case ActionCreateMigration, ActionUpdateMigration, ActionExecuteMigration:
+	case ActionCreateMigration, ActionUpdateMigration, ActionExecuteMigration, ActionAnalyzeMigration:
 		return access == AccessViewEdit
 	default:
 		return false
