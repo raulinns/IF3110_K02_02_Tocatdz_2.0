@@ -14,6 +14,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/postgres"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/schemadiff"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/ui"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/web"
@@ -106,8 +107,9 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 	if err != nil {
 		return err
 	}
+	validator := migration.NewPostgreSQLValidator()
 	migrations, err := migration.NewService(migration.Config{
-		Repository: ledger, Coordinator: p.targets, Validator: migration.NewPostgreSQLValidator(),
+		Repository: ledger, Coordinator: p.targets, Validator: validator,
 		Authorizer: authorizer, Accounts: store, IDs: tokens, Clock: clock,
 	})
 	if err != nil {
@@ -118,6 +120,10 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 		return err
 	}
 	p.worker, err = migration.NewReconcileWorker(ledger, reconciler, migration.DefaultReconcileInterval)
+	if err != nil {
+		return err
+	}
+	diff, err := schemadiff.NewService(schemadiff.Config{Reader: p.targets, Validator: validator, Authorizer: authorizer})
 	if err != nil {
 		return err
 	}
@@ -139,6 +145,7 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 		Authorizer: authorizer,
 		Migrations: migrations,
 		Admin:      adminPages,
+		SchemaDiff: diff,
 	})
 	if err != nil {
 		return err

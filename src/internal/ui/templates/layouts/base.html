@@ -1,14 +1,32 @@
 {{define "base"}}<!doctype html>
-<html lang="id">
+<html lang="id" data-bs-theme="light">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="light dark">
 	<title>{{if .Title}}{{.Title}} · {{end}}Tocatdz</title>
+	<script src="/static/js/theme.js"></script>
+	<link rel="stylesheet" href="/static/vendor/bootstrap/css/bootstrap.min.css">
+	<link rel="stylesheet" href="/static/vendor/fontawesome/css/fontawesome.min.css">
+	<link rel="stylesheet" href="/static/vendor/fontawesome/css/solid.min.css">
 	<link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
-	{{template "navbar" .}}
-	<main>{{template "content" .}}</main>
+	{{if .SignedIn}}
+	<div class="wrapper">
+		{{template "sidebar" .}}
+		<div id="body">
+			{{template "navbar" .}}
+			<main class="content">
+				<div class="container-fluid">{{template "content" .}}</div>
+			</main>
+		</div>
+	</div>
+	{{template "confirm-modal" .}}
+	{{else}}
+	<main class="auth-wrapper">{{template "content" .}}</main>
+	{{end}}
+	<script src="/static/vendor/bootstrap/js/bootstrap.bundle.min.js" defer></script>
 	<script src="/static/js/app.js" defer></script>
 </body>
 </html>{{end}}

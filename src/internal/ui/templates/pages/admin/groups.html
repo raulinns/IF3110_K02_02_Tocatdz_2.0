@@ -1,49 +1,62 @@
 {{define "content"}}{{with .Content}}
-<section>
-	<h1>Group</h1>
-	{{template "admin-nav" .Section}}
-	{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
-	{{range .Data}}{{$group := .}}
-	<h2>{{.Name}}</h2>
-	<div class="table-wrap">
-		<table class="table">
-			<thead><tr><th scope="col">Anggota</th><th scope="col">Tindakan</th></tr></thead>
-			<tbody>
-				{{range .Members}}
-				<tr>
-					<td class="mono">{{.Username}}</td>
-					<td>
-						<form method="post" action="/admin/groups/{{$group.ID}}/members/{{.ID}}/remove">
-							<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-							<button type="submit" class="button button-ghost">Keluarkan</button>
-						</form>
-					</td>
-				</tr>
-				{{else}}
-				<tr><td colspan="2">Belum ada anggota.</td></tr>
-				{{end}}
-			</tbody>
-		</table>
+<div class="page-header">
+	<div class="page-pretitle">Administrasi</div>
+	<h1 class="page-title">Group</h1>
+</div>
+{{template "admin-nav" .Section}}
+{{if .Error}}<div class="alert alert-danger notice notice-error" role="alert"><i class="fas fa-circle-exclamation" aria-hidden="true"></i><div>{{.Error}}</div></div>{{end}}
+<div class="row g-4">
+	<div class="col-xl-8">
+		{{range .Data}}{{$group := .}}
+		<div class="card">
+			<div class="card-header"><i class="fas fa-users text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">{{.Name}}</h2><span class="card-header-meta">{{len .Members}} anggota</span></div>
+			<div class="table-responsive">
+				<table class="table table-hover">
+					<thead><tr><th scope="col">Anggota</th><th scope="col" class="text-end">Tindakan</th></tr></thead>
+					<tbody>
+						{{range .Members}}
+						<tr>
+							<td class="mono"><i class="fas fa-user text-muted" aria-hidden="true"></i> {{.Username}}</td>
+							<td class="text-end">
+								<form method="post" action="/admin/groups/{{$group.ID}}/members/{{.ID}}/remove">
+									<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+									<button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-user-minus" aria-hidden="true"></i>Keluarkan</button>
+								</form>
+							</td>
+						</tr>
+						{{else}}
+						<tr><td colspan="2" class="text-muted">Belum ada anggota.</td></tr>
+						{{end}}
+					</tbody>
+				</table>
+			</div>
+			<div class="card-body border-top">
+				<form method="post" action="/admin/groups/{{.ID}}/members" class="inline-form">
+					<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+					<label for="member-{{.ID}}" class="visually-hidden">Tambah anggota (username)</label>
+					<input id="member-{{.ID}}" name="username" type="text" class="form-control form-control-sm" placeholder="Tambah anggota (username)" autocapitalize="none" spellcheck="false" required>
+					<button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-user-plus" aria-hidden="true"></i>Tambahkan</button>
+				</form>
+			</div>
+		</div>
+		{{else}}
+		<div class="box"><div class="empty-state"><i class="fas fa-users" aria-hidden="true"></i><p class="mb-0">Belum ada group.</p></div></div>
+		{{end}}
 	</div>
-	<form method="post" action="/admin/groups/{{.ID}}/members" class="form form-inline">
-		<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-		<div class="field">
-			<label for="member-{{.ID}}">Tambah anggota (username)</label>
-			<input id="member-{{.ID}}" name="username" type="text" autocapitalize="none" spellcheck="false" required>
+	<div class="col-xl-4">
+		<div class="card">
+			<div class="card-header"><i class="fas fa-plus text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Buat group</h2></div>
+			<div class="card-body">
+				<form method="post" action="/admin/groups">
+					<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+					<div class="mb-3">
+						<label for="group-name" class="form-label">Nama group</label>
+						<input id="group-name" name="name" type="text" class="form-control" maxlength="64" required>
+					</div>
+					<button type="submit" class="btn btn-primary w-100"><i class="fas fa-plus" aria-hidden="true"></i>Buat group</button>
+				</form>
+			</div>
 		</div>
-		<button type="submit" class="button button-ghost">Tambahkan</button>
-	</form>
-	{{else}}
-	<p class="lead">Belum ada group.</p>
-	{{end}}
-	<h2>Buat group</h2>
-	<form method="post" action="/admin/groups" class="form narrow">
-		<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-		<div class="field">
-			<label for="group-name">Nama group</label>
-			<input id="group-name" name="name" type="text" maxlength="64" required>
-		</div>
-		<button type="submit" class="button button-primary">Buat group</button>
-	</form>
-</section>
+	</div>
+</div>
 {{end}}{{end}}

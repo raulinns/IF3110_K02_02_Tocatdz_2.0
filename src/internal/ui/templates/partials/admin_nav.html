@@ -1,8 +1,8 @@
 {{define "admin-nav"}}
-<nav class="tabs" aria-label="Bagian admin">
-	<a href="/admin/users"{{if eq . "users"}} aria-current="page"{{end}}>User</a>
-	<a href="/admin/groups"{{if eq . "groups"}} aria-current="page"{{end}}>Group</a>
-	<a href="/admin/connections"{{if eq . "connections"}} aria-current="page"{{end}}>Koneksi</a>
-	<a href="/admin/grants"{{if eq . "grants"}} aria-current="page"{{end}}>Akses</a>
-</nav>
+<ul class="nav nav-tabs" aria-label="Bagian admin">
+	<li class="nav-item"><a class="nav-link{{if eq . "users"}} active{{end}}" href="/admin/users"{{if eq . "users"}} aria-current="page"{{end}}><i class="fas fa-user" aria-hidden="true"></i> User</a></li>
+	<li class="nav-item"><a class="nav-link{{if eq . "groups"}} active{{end}}" href="/admin/groups"{{if eq . "groups"}} aria-current="page"{{end}}><i class="fas fa-users" aria-hidden="true"></i> Group</a></li>
+	<li class="nav-item"><a class="nav-link{{if eq . "connections"}} active{{end}}" href="/admin/connections"{{if eq . "connections"}} aria-current="page"{{end}}><i class="fas fa-plug" aria-hidden="true"></i> Koneksi</a></li>
+	<li class="nav-item"><a class="nav-link{{if eq . "grants"}} active{{end}}" href="/admin/grants"{{if eq . "grants"}} aria-current="page"{{end}}><i class="fas fa-user-shield" aria-hidden="true"></i> Akses</a></li>
+</ul>
 {{end}}

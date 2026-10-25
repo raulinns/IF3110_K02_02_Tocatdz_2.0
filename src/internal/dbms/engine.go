@@ -9,10 +9,7 @@ var ErrUnsupportedEngine = errors.New("unsupported DBMS engine")
 
 type Engine string
 
-const (
-	PostgreSQL Engine = "postgresql"
-	MySQL      Engine = "mysql"
-)
+const PostgreSQL Engine = "postgresql"
 
 func ParseEngine(raw string) (Engine, error) {
 	normalized := strings.ToLower(strings.TrimSpace(raw))
@@ -20,9 +17,6 @@ func ParseEngine(raw string) (Engine, error) {
 	switch normalized {
 	case "postgres", string(PostgreSQL):
 		return PostgreSQL, nil
-
-	case string(MySQL):
-		return MySQL, nil
 
 	default:
 		return "", ErrUnsupportedEngine

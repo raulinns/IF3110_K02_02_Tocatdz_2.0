@@ -75,3 +75,16 @@ func TestDraftAndParserBoundaries(t *testing.T) {
 		t.Fatal("draft SQL leaked in formatting")
 	}
 }
+
+func TestQualifyFunctionsOnlyTouchesUnqualifiedCalls(t *testing.T) {
+	v := NewPostgreSQLValidator()
+	sql := "-- now() di komentar\nALTER TABLE public.t ADD COLUMN a timestamptz DEFAULT now(), ADD COLUMN b text DEFAULT 'lower(x)', ADD COLUMN c text DEFAULT pg_catalog.upper('y'), ADD COLUMN d text DEFAULT public.fn(lower('z'));"
+	got, err := v.QualifyFunctions(context.Background(), security.NewSecret(sql))
+	want := "-- now() di komentar\nALTER TABLE public.t ADD COLUMN a timestamptz DEFAULT pg_catalog.now(), ADD COLUMN b text DEFAULT 'lower(x)', ADD COLUMN c text DEFAULT pg_catalog.upper('y'), ADD COLUMN d text DEFAULT public.fn(pg_catalog.lower('z'));"
+	if err != nil || got.Reveal() != want {
+		t.Fatalf("got %q, %v", got.Reveal(), err)
+	}
+	if _, err := v.QualifyFunctions(context.Background(), security.NewSecret("CREATE TABLE (")); !errors.Is(err, security.ErrInvalidInput) {
+		t.Fatal("syntax error not rejected")
+	}
+}

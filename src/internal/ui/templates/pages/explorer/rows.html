@@ -1,27 +1,36 @@
 {{define "content"}}{{with .Content}}
-<section>
-	<p class="breadcrumb"><a href="/databases">Database</a> / <a href="{{.Tabs.SchemaHref}}">Schema</a> / <a class="mono" href="{{.TableHref}}">{{.Query.Schema}}.{{.Query.Table}}</a></p>
-	<h1>Data <span class="mono">{{.Query.Schema}}.{{.Query.Table}}</span></h1>
-	{{template "database-tabs" .Tabs}}
-	{{if eq .Page.Order "best_effort"}}<p class="lead">Tabel ini tidak punya urutan unik; isi halaman bisa bergeser saat data berubah.</p>{{end}}
+<div class="page-header">
+	<nav aria-label="breadcrumb">
+		<ol class="breadcrumb">
+			<li class="breadcrumb-item"><a href="/databases">Database</a></li>
+			<li class="breadcrumb-item"><a href="{{.Tabs.SchemaHref}}">Schema</a></li>
+			<li class="breadcrumb-item"><a class="mono" href="{{.TableHref}}">{{.Query.Schema}}.{{.Query.Table}}</a></li>
+			<li class="breadcrumb-item active" aria-current="page">Data</li>
+		</ol>
+	</nav>
+	<h1 class="page-title">Data <span class="mono">{{.Query.Schema}}.{{.Query.Table}}</span></h1>
+</div>
+{{template "database-tabs" .Tabs}}
+{{if eq .Page.Order "best_effort"}}<div class="alert alert-warning" role="note"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i><div>Tabel ini tidak punya urutan unik; isi halaman bisa bergeser saat data berubah.</div></div>{{end}}
+<div class="card">
 	{{if .Page.Rows}}
-	<div class="table-wrap">
-		<table class="table table-data">
+	<div class="table-responsive">
+		<table class="table table-sm table-hover table-data">
 			<thead><tr>{{range .Page.Columns}}<th scope="col" class="mono">{{.}}</th>{{end}}</tr></thead>
 			<tbody>
 				{{range .Page.Rows}}
-				<tr>{{range .}}<td class="mono">{{if .Null}}<span class="null">NULL</span>{{else}}{{.Value}}{{if eq .Encoding "hex"}} <span class="tag">hex</span>{{end}}{{if .Truncated}} <span class="tag">dipotong</span>{{end}}{{end}}</td>{{end}}</tr>
+				<tr>{{range .}}<td class="mono">{{if .Null}}<span class="null">NULL</span>{{else}}{{.Value}}{{if eq .Encoding "hex"}} <span class="badge badge-soft">hex</span>{{end}}{{if .Truncated}} <span class="badge badge-soft">dipotong</span>{{end}}{{end}}</td>{{end}}</tr>
 				{{end}}
 			</tbody>
 		</table>
 	</div>
 	{{else}}
-	<p class="lead">Tidak ada baris di halaman ini.</p>
+	<div class="empty-state"><i class="fas fa-circle-info" aria-hidden="true"></i><p class="mb-0">Tidak ada baris di halaman ini.</p></div>
 	{{end}}
-	<nav class="pagination" aria-label="Halaman data">
-		{{with .PrevHref}}<a class="button button-ghost" href="{{.}}">Sebelumnya</a>{{end}}
-		<span>Halaman {{.Query.Page}} · {{.Query.Limit}} baris per halaman</span>
-		{{with .NextHref}}<a class="button button-ghost" href="{{.}}">Berikutnya</a>{{end}}
-	</nav>
-</section>
+</div>
+<nav class="pagination-bar" aria-label="Halaman data">
+	<div>{{with .PrevHref}}<a class="btn btn-sm btn-light" href="{{.}}"><i class="fas fa-chevron-left" aria-hidden="true"></i>Sebelumnya</a>{{end}}</div>
+	<span>Halaman {{.Query.Page}} · {{.Query.Limit}} baris per halaman</span>
+	<div>{{with .NextHref}}<a class="btn btn-sm btn-light" href="{{.}}">Berikutnya<i class="fas fa-chevron-right ms-2 me-0" aria-hidden="true"></i></a>{{end}}</div>
+</nav>
 {{end}}{{end}}

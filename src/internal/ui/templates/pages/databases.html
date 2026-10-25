@@ -1,32 +1,39 @@
 {{define "content"}}{{with .Content}}
-<section>
-	<h1>Database</h1>
-	{{if .Databases}}
-	<div class="table-wrap">
-		<table class="table">
-			<thead>
-				<tr>
-					<th scope="col">Nama</th>
-					<th scope="col">Akses</th>
-					<th scope="col">Tindakan</th>
-				</tr>
-			</thead>
-			<tbody>
-				{{range .Databases}}
-				<tr>
-					<td class="mono">{{.Name}}</td>
-					<td>{{.AccessLabel}}</td>
-					<td class="table-actions">
-						<a href="/databases/{{.ID}}/schema">Schema</a>
-						{{if feature "migrations"}}<a href="/databases/{{.ID}}/migrations">Migration</a>{{end}}
-					</td>
-				</tr>
-				{{end}}
-			</tbody>
-		</table>
+<div class="page-header">
+	<div class="page-pretitle">Platform</div>
+	<h1 class="page-title">Database</h1>
+</div>
+{{if .Databases}}
+<div class="box box-primary">
+	<div class="box-body">
+		<div class="table-responsive">
+			<table class="table table-hover">
+				<thead>
+					<tr>
+						<th scope="col">Nama</th>
+						<th scope="col">Akses</th>
+						<th scope="col" class="text-end">Tindakan</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Databases}}
+					<tr>
+						<td class="mono text-nowrap"><i class="fas fa-database text-muted" aria-hidden="true"></i> {{.Name}}</td>
+						<td><span class="badge access-{{.Access}}">{{.AccessLabel}}</span></td>
+						<td class="text-end text-nowrap">
+							<a class="btn btn-sm btn-outline-primary" href="/databases/{{.ID}}/schema"><i class="fas fa-table" aria-hidden="true"></i>Schema</a>
+							{{if feature "migrations"}}<a class="btn btn-sm btn-outline-secondary" href="/databases/{{.ID}}/migrations"><i class="fas fa-code-branch" aria-hidden="true"></i>Migration</a>{{end}}
+						</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
 	</div>
-	{{else}}
-	<p class="lead">Anda belum memiliki akses ke database mana pun. Hubungi admin platform untuk meminta akses.</p>
-	{{end}}
-</section>
+</div>
+{{else}}
+<div class="box">
+	<div class="empty-state"><i class="fas fa-lock" aria-hidden="true"></i><p class="mb-0">Anda belum memiliki akses ke database mana pun. Hubungi admin platform untuk meminta akses.</p></div>
+</div>
+{{end}}
 {{end}}{{end}}

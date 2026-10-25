@@ -1,8 +1,21 @@
 {{define "content"}}{{with .Content}}
-<section class="narrow">
-	<p class="breadcrumb"><a href="/databases">Database</a> / <a href="{{.Tabs.MigrationsHref}}">Migration</a> / Editor</p>
-	<h1>Editor migration</h1>
-	{{template "database-tabs" .Tabs}}
-	<p class="lead">Tinjau SQL sebelum disimpan. Draft baru bisa dijalankan dari halaman detailnya.</p>
-</section>
-{{end}}{{if .Content}}<section class="narrow">{{template "migration-form" .}}</section>{{end}}{{end}}
+<div class="page-header">
+	<nav aria-label="breadcrumb">
+		<ol class="breadcrumb">
+			<li class="breadcrumb-item"><a href="/databases">Database</a></li>
+			<li class="breadcrumb-item"><a href="{{.Tabs.MigrationsHref}}">Migration</a></li>
+			<li class="breadcrumb-item active" aria-current="page">Editor</li>
+		</ol>
+	</nav>
+	<h1 class="page-title">Editor migration</h1>
+</div>
+{{template "database-tabs" .Tabs}}
+{{end}}{{if .Content}}
+<div class="card">
+	<div class="card-header"><i class="fas fa-pen-to-square text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Draft baru</h2></div>
+	<div class="card-body">
+		<p class="text-muted small">Tinjau SQL sebelum disimpan. Draft baru bisa dijalankan dari halaman detailnya.</p>
+		{{template "migration-form" .}}
+	</div>
+</div>
+{{end}}{{end}}

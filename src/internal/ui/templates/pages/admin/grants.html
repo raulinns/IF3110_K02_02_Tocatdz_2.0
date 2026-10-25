@@ -1,58 +1,73 @@
 {{define "content"}}{{with .Content}}
-<section>
-	<h1>Akses database</h1>
-	{{template "admin-nav" .Section}}
-	{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
-	<p class="lead">Akses diberikan ke group, bukan langsung ke user. Jika user ada di beberapa group, akses tertinggi untuk database yang sama yang berlaku.</p>
-	{{with .Data}}
-	<div class="table-wrap">
-		<table class="table">
-			<thead><tr><th scope="col">Group</th><th scope="col">Database</th><th scope="col">Akses</th><th scope="col">Tindakan</th></tr></thead>
-			<tbody>
-				{{range .Grants}}
-				<tr>
-					<td>{{.GroupName}}</td>
-					<td class="mono">{{.DatabaseName}}</td>
-					<td>{{.AccessLabel}}</td>
-					<td>
-						<form method="post" action="/admin/grants/revoke">
-							<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-							<input type="hidden" name="group_id" value="{{.GroupID}}">
-							<input type="hidden" name="database_id" value="{{.DatabaseID}}">
-							<button type="submit" class="button button-ghost">Cabut</button>
-						</form>
-					</td>
-				</tr>
-				{{else}}
-				<tr><td colspan="4">Belum ada akses yang diberikan.</td></tr>
-				{{end}}
-			</tbody>
-		</table>
+<div class="page-header">
+	<div class="page-pretitle">Administrasi</div>
+	<h1 class="page-title">Akses database</h1>
+</div>
+{{template "admin-nav" .Section}}
+{{if .Error}}<div class="alert alert-danger notice notice-error" role="alert"><i class="fas fa-circle-exclamation" aria-hidden="true"></i><div>{{.Error}}</div></div>{{end}}
+<div class="alert alert-info" role="note"><i class="fas fa-circle-info" aria-hidden="true"></i><div>Akses diberikan ke group, bukan langsung ke user. Jika user ada di beberapa group, akses tertinggi untuk database yang sama yang berlaku.</div></div>
+{{with .Data}}
+<div class="row g-4">
+	<div class="col-xl-8">
+		<div class="box box-primary mb-0">
+			<div class="box-body">
+				<div class="table-responsive">
+					<table class="table table-hover">
+						<thead><tr><th scope="col">Group</th><th scope="col">Database</th><th scope="col">Akses</th><th scope="col" class="text-end">Tindakan</th></tr></thead>
+						<tbody>
+							{{range .Grants}}
+							<tr>
+								<td><i class="fas fa-users text-muted" aria-hidden="true"></i> {{.GroupName}}</td>
+								<td class="mono">{{.DatabaseName}}</td>
+								<td><span class="badge access-{{.Access}}">{{.AccessLabel}}</span></td>
+								<td class="text-end">
+									<form method="post" action="/admin/grants/revoke">
+										<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+										<input type="hidden" name="group_id" value="{{.GroupID}}">
+										<input type="hidden" name="database_id" value="{{.DatabaseID}}">
+										<button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-ban" aria-hidden="true"></i>Cabut</button>
+									</form>
+								</td>
+							</tr>
+							{{else}}
+							<tr><td colspan="4" class="text-muted">Belum ada akses yang diberikan.</td></tr>
+							{{end}}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
 	</div>
-	<h2>Beri atau ubah akses</h2>
-	<form method="post" action="/admin/grants" class="form narrow">
-		<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-		<div class="field">
-			<label for="grant-group">Group</label>
-			<select id="grant-group" name="group_id" required>
-				{{range .Groups}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
-			</select>
+	<div class="col-xl-4">
+		<div class="card mb-0">
+			<div class="card-header"><i class="fas fa-user-shield text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Beri atau ubah akses</h2></div>
+			<div class="card-body">
+				<form method="post" action="/admin/grants">
+					<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+					<div class="mb-3">
+						<label for="grant-group" class="form-label">Group</label>
+						<select id="grant-group" name="group_id" class="form-select" required>
+							{{range .Groups}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+						</select>
+					</div>
+					<div class="mb-3">
+						<label for="grant-database" class="form-label">Database</label>
+						<select id="grant-database" name="database_id" class="form-select" required>
+							{{range .Connections}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+						</select>
+					</div>
+					<div class="mb-3">
+						<label for="grant-access" class="form-label">Level akses</label>
+						<select id="grant-access" name="access" class="form-select" required>
+							<option value="view_only">Lihat saja</option>
+							<option value="view_edit">Lihat + ubah (migration)</option>
+						</select>
+					</div>
+					<button type="submit" class="btn btn-primary w-100"><i class="fas fa-floppy-disk" aria-hidden="true"></i>Simpan akses</button>
+				</form>
+			</div>
 		</div>
-		<div class="field">
-			<label for="grant-database">Database</label>
-			<select id="grant-database" name="database_id" required>
-				{{range .Connections}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
-			</select>
-		</div>
-		<div class="field">
-			<label for="grant-access">Level akses</label>
-			<select id="grant-access" name="access" required>
-				<option value="view_only">Lihat saja</option>
-				<option value="view_edit">Lihat + ubah (migration)</option>
-			</select>
-		</div>
-		<button type="submit" class="button button-primary">Simpan akses</button>
-	</form>
-	{{end}}
-</section>
+	</div>
+</div>
+{{end}}
 {{end}}{{end}}

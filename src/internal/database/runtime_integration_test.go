@@ -13,10 +13,9 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/testutil/pgtest"
 )
 
-func TestRuntimeConnectsToPostgreSQLAndMySQLTargets(t *testing.T) {
+func TestRuntimeConnectsToPostgreSQLTarget(t *testing.T) {
 	platformDSN := os.Getenv("TEST_DATABASE_URL")
 	postgresDSN := os.Getenv("TEST_POSTGRES_TARGET_DSN")
-	mysqlDSN := os.Getenv("TEST_MYSQL_TARGET_DSN")
 	if platformDSN == "" || postgresDSN == "" {
 		t.Skip("database integration environment is not configured")
 	}
@@ -49,12 +48,6 @@ func TestRuntimeConnectsToPostgreSQLAndMySQLTargets(t *testing.T) {
 			name:   "integration postgresql",
 			engine: dbms.PostgreSQL,
 			dsn:    postgresDSN,
-		},
-		{
-			id:     "99999999-9999-4999-8999-999999999999",
-			name:   "integration mysql",
-			engine: dbms.MySQL,
-			dsn:    mysqlDSN,
 		},
 	}
 	for _, target := range targets {

@@ -36,7 +36,7 @@ func TestOpenSQLPoolValidatesAndPingsConnection(t *testing.T) {
 
 	got, err := openSQLPool(
 		context.Background(),
-		"mysql",
+		"fakedriver",
 		SQLConfig{DSN: "  " + dsn + "  "},
 		func(driverName, databaseDSN string) (*fakeSQLPool, error) {
 			gotDriver, gotDSN = driverName, databaseDSN
@@ -46,7 +46,7 @@ func TestOpenSQLPoolValidatesAndPingsConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openSQLPool() returned error: %v", err)
 	}
-	if got != fake || gotDriver != "mysql" || gotDSN != dsn {
+	if got != fake || gotDriver != "fakedriver" || gotDSN != dsn {
 		t.Fatal("openSQLPool() did not pass normalized connection settings")
 	}
 	if fake.pingCalls != 1 || fake.pingDeadline.IsZero() || fake.closed {
@@ -58,7 +58,7 @@ func TestOpenSQLPoolUsesConfiguredTimeout(t *testing.T) {
 	fake := &fakeSQLPool{}
 	_, err := openSQLPool(
 		context.Background(),
-		"mysql",
+		"fakedriver",
 		SQLConfig{
 			DSN:            "app:secret@tcp(localhost:3306)/target",
 			StartupTimeout: 2 * time.Second,
@@ -82,8 +82,8 @@ func TestOpenSQLPoolRejectsInvalidConfiguration(t *testing.T) {
 		want   error
 	}{
 		{name: "missing driver", cfg: SQLConfig{DSN: "dsn"}, want: ErrDriverRequired},
-		{name: "missing DSN", driver: "mysql", want: ErrDSNRequired},
-		{name: "negative timeout", driver: "mysql", cfg: SQLConfig{DSN: "dsn", StartupTimeout: -time.Second}, want: ErrInvalidStartupTimeout},
+		{name: "missing DSN", driver: "fakedriver", want: ErrDSNRequired},
+		{name: "negative timeout", driver: "fakedriver", cfg: SQLConfig{DSN: "dsn", StartupTimeout: -time.Second}, want: ErrInvalidStartupTimeout},
 	}
 
 	for _, test := range tests {
@@ -112,7 +112,7 @@ func TestOpenSQLPoolClosesFailedConnectionAndRedactsDSN(t *testing.T) {
 
 	got, err := openSQLPool(
 		context.Background(),
-		"mysql",
+		"fakedriver",
 		SQLConfig{DSN: dsn},
 		func(string, string) (*fakeSQLPool, error) { return fake, nil },
 	)
@@ -130,7 +130,7 @@ func TestOpenSQLPoolRedactsDSNWhenOpenFails(t *testing.T) {
 
 	got, err := openSQLPool(
 		context.Background(),
-		"mysql",
+		"fakedriver",
 		SQLConfig{DSN: dsn},
 		func(string, string) (*fakeSQLPool, error) { return nil, driverErr },
 	)

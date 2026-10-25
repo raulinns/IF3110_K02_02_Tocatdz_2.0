@@ -28,16 +28,6 @@ func TestParseEngineNormalizesSupportedValues(t *testing.T) {
 			raw:  "POSTGRESQL",
 			want: PostgreSQL,
 		},
-		{
-			name: "MySQL",
-			raw:  "mysql",
-			want: MySQL,
-		},
-		{
-			name: "MySQL with whitespace and different casing",
-			raw:  " MySQL ",
-			want: MySQL,
-		},
 	}
 
 	for _, tt := range tests {
@@ -91,6 +81,10 @@ func TestParseEngineRejectsUnsupportedValues(t *testing.T) {
 		{
 			name: "Oracle is not supported",
 			raw:  "oracle",
+		},
+		{
+			name: "MySQL is not supported",
+			raw:  "mysql",
 		},
 		{
 			name: "PostgreSQL DSN is not an engine name",

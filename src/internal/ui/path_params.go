@@ -42,9 +42,10 @@ func databasePath(databaseID security.ID, parts ...string) string {
 type DatabaseTabs struct {
 	SchemaHref     string
 	MigrationsHref string
+	DiffHref       string
 	Active         string
 }
 
 func databaseTabs(databaseID security.ID, active string) DatabaseTabs {
-	return DatabaseTabs{SchemaHref: databasePath(databaseID, "schema"), MigrationsHref: databasePath(databaseID, "migrations"), Active: active}
+	return DatabaseTabs{SchemaHref: databasePath(databaseID, "schema"), MigrationsHref: databasePath(databaseID, "migrations"), DiffHref: databasePath(databaseID, "schema-diff"), Active: active}
 }

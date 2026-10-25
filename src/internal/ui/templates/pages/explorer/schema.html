@@ -1,27 +1,36 @@
 {{define "content"}}{{with .Content}}{{$view := .}}
-<section>
-	<p class="breadcrumb"><a href="/databases">Database</a> / <span class="mono">{{if .Overview.DatabaseName}}{{.Overview.DatabaseName}}{{else}}{{.DatabaseID}}{{end}}</span></p>
-	<h1>Schema</h1>
-	{{template "database-tabs" .Tabs}}
-	{{range .Overview.Schemas}}{{$schema := .Name}}
-	<h2 class="mono">{{.Name}}</h2>
+<div class="page-header">
+	<nav aria-label="breadcrumb">
+		<ol class="breadcrumb">
+			<li class="breadcrumb-item"><a href="/databases">Database</a></li>
+			<li class="breadcrumb-item active mono" aria-current="page">{{if .Overview.DatabaseName}}{{.Overview.DatabaseName}}{{else}}{{.DatabaseID}}{{end}}</li>
+		</ol>
+	</nav>
+	<h1 class="page-title">Schema</h1>
+</div>
+{{template "database-tabs" .Tabs}}
+{{range .Overview.Schemas}}{{$schema := .Name}}
+<div class="card">
+	<div class="card-header"><i class="fas fa-folder-open text-muted" aria-hidden="true"></i><h2 class="h6 mb-0 mono">{{.Name}}</h2><span class="card-header-meta">{{len .Tables}} table</span></div>
 	{{if .Tables}}
-	<div class="table-wrap">
-		<table class="table">
+	<div class="table-responsive">
+		<table class="table table-hover">
 			<thead><tr><th scope="col">Nama</th><th scope="col">Jenis</th></tr></thead>
 			<tbody>
 				{{range .Tables}}
 				<tr>
-					<td class="mono"><a href="{{$view.TableHref $schema .Name}}">{{.Name}}</a></td>
-					<td>{{.Kind}}</td>
+					<td class="mono"><a href="{{$view.TableHref $schema .Name}}"><i class="fas fa-table text-muted" aria-hidden="true"></i> {{.Name}}</a></td>
+					<td><span class="badge badge-soft">{{.Kind}}</span></td>
 				</tr>
 				{{end}}
 			</tbody>
 		</table>
 	</div>
-	{{else}}<p class="lead">Schema ini belum memiliki table.</p>{{end}}
 	{{else}}
-	<p class="lead">Database ini belum memiliki schema yang dapat ditampilkan.</p>
+	<div class="empty-state"><i class="fas fa-circle-info" aria-hidden="true"></i><p class="mb-0">Schema ini belum memiliki table.</p></div>
 	{{end}}
-</section>
+</div>
+{{else}}
+<div class="box"><div class="empty-state"><i class="fas fa-circle-info" aria-hidden="true"></i><p class="mb-0">Database ini belum memiliki schema yang dapat ditampilkan.</p></div></div>
+{{end}}
 {{end}}{{end}}

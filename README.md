@@ -4,6 +4,8 @@ Tugas Besar Milestone 1 IF3110 Pengembangan Aplikasi Web: Database Management Pl
 
 Alur yang didukung: login → akses lewat group → pilih database → lihat schema/table/data → buat migration → jalankan (commit/rollback) → riwayat migration. Platform admin mengelola user, group, koneksi database, dan akses.
 
+Bonus yang dikerjakan: **schema diff dan migration generation** serta **query execution plan analysis**. Bonus DBMS tambahan (MySQL) tidak dikerjakan pada versi ini.
+
 ## Prasyarat
 
 - Go 1.27.3 atau lebih baru
@@ -89,11 +91,10 @@ dan menolak perubahan. Data foundation yang sudah ada memerlukan migrasi data
 eksplisit; tidak ada penghapusan atau konversi otomatis. Gunakan database platform
 baru untuk menjalankan aplikasi jika sebelumnya hanya memakai schema foundation.
 
-Registry/driver dan reader MySQL tersedia pada paket foundation, tetapi UI admin
-serta executor aplikasi saat ini tetap PostgreSQL. Ini belum merupakan bonus
-MySQL lengkap. Schema diff/generation belum tersedia. Bonus query execution plan
-tersedia pada detail draft migration: EXPLAIN untuk SELECT/INSERT/UPDATE/DELETE,
-dan EXPLAIN ANALYZE untuk SELECT baca saja.
+Paket foundation (`dbms`, `targetdb`, `platformstore`, `database`) hanya
+mendukung PostgreSQL; adapter dan driver MySQL sudah dihapus. Bonus query
+execution plan tersedia pada detail draft migration, dan bonus schema diff
+tersedia pada tab Schema diff setiap database.
 
 Receipt migration dimiliki role `NOLOGIN` yang terpisah dari akun SQL target.
 Akun SQL tidak bisa membaca kunci, mengubah tabel receipt, atau menjadi pemiliknya.
@@ -108,14 +109,16 @@ jalankan seed lagi dengan nama dan database target yang sama, lalu hidupkan serv
 Seed mempertahankan akun, password, ID database, dan riwayat; target fisik yang
 berbeda dengan nama lama ditolak. Jangan mengganti kunci enkripsi pada `.env`.
 
-Untuk menambah database target lain melalui halaman admin, ikuti setup
-`cmd/target-init` dan checklist pada [panduan testing wajib](docs/testing-wajib.md).
-Database metadata platform selalu ditolak sebagai target.
+Untuk menambah database target lain melalui halaman admin, isi
+`TARGET_ADMIN_DATABASE_URL` (akun pemilik/superuser database target) lalu
+jalankan `go run ./cmd/target-init`. DSN akun terbatas hasil setup ditulis ke
+`target-runtime.env` (diabaikan git); salin `TARGET_DATABASE_URL` dari file itu ke
+halaman admin Koneksi. Database metadata platform selalu ditolak sebagai target.
 
 Test PostgreSQL membuat database sementara per kasus, termasuk test foundation,
 sehingga schema kedua jalur tidak bercampur. Aktifkan `TEST_DATABASE_URL` untuk
 test repository dan end-to-end aplikasi; `TEST_POSTGRES_TARGET_DSN` mengaktifkan
-test reader foundation, dan `TEST_MYSQL_TARGET_DSN` hanya untuk target MySQL test.
+test reader foundation.
 
 Contoh PowerShell setelah server PostgreSQL test tersedia:
 
@@ -127,7 +130,8 @@ go test -race -tags=argon2integration -count=1 ./...
 
 ## Bonus query execution plan
 
-Panduan bonus: [testing query execution plan](docs/testing-query-plan.md).
+Buka detail draft migration, simpan SQL, pilih nomor statement, lalu tekan
+EXPLAIN (SELECT/INSERT/UPDATE/DELETE) atau EXPLAIN ANALYZE (SELECT baca saja).
 Analisis memerlukan View + Edit, memakai revision SQL draft tersimpan dan
 transaksi read-only, tidak memberi versi migration atau menulis receipt.
 Untuk script beberapa statement, pilih nomor statement; DDL sebelumnya tidak
@@ -136,20 +140,51 @@ trigger, atau efek lain yang belum tentu dapat dipulihkan oleh rollback.
 Tidak ada perubahan schema metadata atau kunci `.env`; restart server Go setelah
 memperbarui kode untuk memakai fitur ini.
 
+## Bonus schema diff dan migration generation
+
+Buka tab **Schema diff** pada database yang ingin diubah. Pilih schema saat ini,
+lalu database dan schema pembanding sebagai kondisi yang diinginkan. Pembanding
+boleh database lain yang bisa Anda lihat, atau schema lain di database yang sama
+(misalnya `public` dibandingkan dengan `rancangan`).
+
+- Halaman menampilkan perbedaan tabel, kolom (tipe, NOT NULL, default), constraint
+  (PRIMARY KEY, UNIQUE, CHECK, FOREIGN KEY, EXCLUDE), index, dan view, beserta
+  jumlah perubahan yang berisiko menghapus data.
+- Kandidat SQL dibuat urut aman: hapus view dan foreign key lama, ubah kolom,
+  buat tabel, tambah constraint dan foreign key, lalu index dan view.
+- Fungsi dari katalog (misalnya `now()`) ditulis ulang menjadi `pg_catalog.now()`
+  dan kandidat langsung diperiksa validator migration yang sama.
+- Kandidat ditampilkan di form draft migration yang bisa diedit. SQL baru
+  tersimpan setelah user menekan **Simpan sebagai draft**, lalu dijalankan dari
+  detail migration seperti draft biasa (bisa dianalisis dengan EXPLAIN dulu).
+- Perbandingan hanya membaca katalog dalam transaksi read-only dan memerlukan akses
+  View pada kedua database; form draft hanya muncul bagi user dengan View + Edit.
+- Rename tidak dideteksi (terbaca sebagai hapus lalu tambah). Perubahan identity,
+  serial, generated column, sequence, trigger, function, dan materialized view
+  tidak dibuat otomatis; halaman memberi peringatan agar ditulis manual.
+
+## Kredit aset tampilan
+
+- Tata letak dan gaya: [Bootstrap Simple Admin Template](https://github.com/alexisbriandev/bootstrap-simple-admin-template) (Apache License 2.0).
+- Bootstrap 5.3.3 (MIT), Font Awesome Free 6 solid (CC BY 4.0 / SIL OFL 1.1 / MIT), dan font Lato (SIL OFL 1.1), semuanya diambil dari folder aset template tersebut. Lisensi disertakan di `src/internal/ui/static`.
+- Logo masih placeholder dan akan diganti tim.
+
 ## Struktur
 
 ```
 src/
-├── cmd/server   # aplikasi web
-├── cmd/seed     # data demo
-├── cmd/keygen   # pembuat kunci .env
+├── cmd/server       # aplikasi web
+├── cmd/seed         # data demo
+├── cmd/keygen       # pembuat kunci .env
+├── cmd/target-init  # setup akun terbatas untuk database target tambahan
 └── internal/
-    ├── security   # password, session, CSRF, otorisasi
-    ├── explorer   # domain explorer database
-    ├── migration  # domain migration (validator, executor, rekonsiliasi)
-    ├── admin      # domain administrasi platform
-    ├── postgres   # repository PostgreSQL + koneksi database target
-    ├── bootstrap  # perakitan semua komponen
-    ├── ui         # handler HTML, template, CSS
-    └── web        # router dan middleware fondasi
+    ├── security    # password, session, CSRF, otorisasi
+    ├── explorer    # domain explorer database
+    ├── migration   # domain migration (validator, executor, rekonsiliasi, EXPLAIN)
+    ├── schemadiff  # bonus schema diff dan pembuat kandidat SQL
+    ├── admin       # domain administrasi platform
+    ├── postgres    # repository PostgreSQL + koneksi database target
+    ├── bootstrap   # perakitan semua komponen
+    ├── ui          # handler HTML, template, CSS
+    └── web         # router dan middleware fondasi
 ```

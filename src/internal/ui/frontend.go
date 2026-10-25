@@ -5,6 +5,7 @@ import (
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/schemadiff"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -14,6 +15,7 @@ type FrontendConfig struct {
 	Authorizer security.Authorizer
 	Migrations migration.Application
 	Admin      *AdminServices
+	SchemaDiff schemadiff.Application
 }
 
 type Frontend struct{ routes []security.RouteRegistrar }
@@ -76,6 +78,13 @@ func NewFrontend(cfg FrontendConfig) (*Frontend, error) {
 			return nil, err
 		}
 		routes, features.Admin = append(routes, admin), true
+	}
+	if cfg.SchemaDiff != nil {
+		diff, err := NewSchemaDiffUI(cfg.SchemaDiff, adapter, guard, access, renderer)
+		if err != nil {
+			return nil, err
+		}
+		routes, features.SchemaDiff = append(routes, diff), true
 	}
 	renderer.features = features
 	return &Frontend{routes: routes}, nil

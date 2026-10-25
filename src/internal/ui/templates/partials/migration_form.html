@@ -1,16 +1,17 @@
 {{define "migration-form"}}{{with .Content.Form}}
-{{if .Error}}<p class="notice notice-error" role="alert">{{.Error}}</p>{{end}}
-<form method="post" action="{{.Action}}" class="form">
+{{if .Error}}<div class="alert alert-danger notice notice-error" role="alert"><i class="fas fa-circle-exclamation" aria-hidden="true"></i><div>{{.Error}}</div></div>{{end}}
+<form method="post" action="{{.Action}}">
 	<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 	{{if .Revision}}<input type="hidden" name="revision" value="{{.Revision}}">{{end}}
-	<div class="field">
-		<label for="migration-title">Judul</label>
-		<input id="migration-title" name="title" type="text" value="{{.Title}}" maxlength="120" required>
+	<div class="mb-3">
+		<label for="migration-title" class="form-label">Judul</label>
+		<input id="migration-title" name="title" type="text" class="form-control" value="{{.Title}}" maxlength="120" placeholder="Contoh: Tambah kolom telepon" required>
 	</div>
-	<div class="field">
-		<label for="migration-sql">SQL</label>
-		<textarea id="migration-sql" name="sql" class="mono code-editor" rows="16" spellcheck="false" required>{{.SQL}}</textarea>
+	<div class="mb-3">
+		<label for="migration-sql" class="form-label">SQL</label>
+		<textarea id="migration-sql" name="sql" class="form-control code-editor" rows="16" spellcheck="false" placeholder="ALTER TABLE public.pelanggan ADD COLUMN telepon text;" required>{{.SQL}}</textarea>
+		<div class="form-text">Dijalankan dalam satu transaction. Jangan tulis BEGIN/COMMIT sendiri.</div>
 	</div>
-	<button type="submit" class="button button-primary">{{.Submit}}</button>
+	<button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk" aria-hidden="true"></i>{{.Submit}}</button>
 </form>
 {{end}}{{end}}
