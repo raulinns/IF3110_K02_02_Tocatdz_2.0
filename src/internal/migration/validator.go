@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 
@@ -133,6 +134,68 @@ func (v *PostgreSQLValidator) PlanStatement(ctx context.Context, sql security.Se
 		return security.Secret{}, security.ErrInvalidInput
 	}
 	return security.NewSecret(sql.Reveal()[start:end]), nil
+}
+
+// QualifyFunctions menambahkan pg_catalog pada pemanggilan fungsi tanpa schema, misalnya default now() dari katalog.
+func (v *PostgreSQLValidator) QualifyFunctions(ctx context.Context, sql security.Secret) (security.Secret, error) {
+	if v == nil || v.gate == nil {
+		return security.Secret{}, security.ErrUnavailable
+	}
+	if ValidateDraft(Draft{Title: "SQL", SQL: sql}) != nil {
+		return security.Secret{}, security.ErrInvalidInput
+	}
+	select {
+	case <-ctx.Done():
+		return security.Secret{}, security.ErrUnavailable
+	case <-v.gate:
+	}
+	defer func() { v.gate <- struct{}{} }()
+	text := sql.Reveal()
+	tree, err := pgquery.ParseToJSON(text)
+	if ctx.Err() != nil {
+		return security.Secret{}, security.ErrUnavailable
+	}
+	if err != nil {
+		return security.Secret{}, SQLRejection("syntax")
+	}
+	var parsed any
+	if len(tree) > 32<<20 || json.Unmarshal([]byte(tree), &parsed) != nil {
+		return security.Secret{}, security.ErrInvalidInput
+	}
+	var locations []int
+	unqualifiedCalls(parsed, 0, &locations)
+	sort.Sort(sort.Reverse(sort.IntSlice(locations)))
+	last := -1
+	for _, at := range locations {
+		if at == last || at < 0 || at >= len(text) {
+			continue
+		}
+		last = at
+		text = text[:at] + "pg_catalog." + text[at:]
+	}
+	return security.NewSecret(text), nil
+}
+
+func unqualifiedCalls(value any, depth int, result *[]int) {
+	if depth > 256 {
+		return
+	}
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			unqualifiedCalls(child, depth+1, result)
+		}
+	case map[string]any:
+		if call, ok := node["FuncCall"].(map[string]any); ok {
+			names, _ := call["funcname"].([]any)
+			if location, ok := call["location"].(float64); ok && len(names) == 1 {
+				*result = append(*result, int(location))
+			}
+		}
+		for _, child := range node {
+			unqualifiedCalls(child, depth+1, result)
+		}
+	}
 }
 
 func hasMutation(value any) bool {

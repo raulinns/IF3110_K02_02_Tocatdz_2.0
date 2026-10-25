@@ -1,0 +1,102 @@
+{{define "content"}}{{with .Content}}{{$view := .}}
+<div class="page-header">
+	<nav aria-label="breadcrumb">
+		<ol class="breadcrumb">
+			<li class="breadcrumb-item"><a href="/databases">Database</a></li>
+			<li class="breadcrumb-item"><a href="{{.Tabs.SchemaHref}}">{{if .CurrentName}}{{.CurrentName}}{{else}}Schema{{end}}</a></li>
+			<li class="breadcrumb-item active" aria-current="page">Schema diff</li>
+		</ol>
+	</nav>
+	<h1 class="page-title">Schema diff</h1>
+</div>
+{{template "database-tabs" .Tabs}}
+{{if .Error}}<div class="alert alert-danger notice notice-error" role="alert"><i class="fas fa-circle-exclamation" aria-hidden="true"></i><div>{{.Error}}</div></div>{{end}}
+<div class="card">
+	<div class="card-header"><i class="fas fa-code-compare text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Bandingkan schema</h2></div>
+	<div class="card-body">
+		<p class="text-muted small">Pilih kondisi schema yang diinginkan sebagai pembanding. SQL kandidat mengubah schema database ini agar sama dengan pembanding dan tidak dijalankan sampai Anda menyimpannya sebagai draft lalu menjalankannya.</p>
+		<form method="get" action="{{.Action}}">
+			<div class="row g-3 align-items-end">
+				<div class="col-md-3">
+					<label for="diff-schema" class="form-label">Schema saat ini</label>
+					<input id="diff-schema" name="schema" type="text" class="form-control mono" value="{{.Schema}}" maxlength="63" required>
+				</div>
+				<div class="col-md-4">
+					<label for="diff-source" class="form-label">Database pembanding</label>
+					<select id="diff-source" name="source" class="form-select" required>
+						{{range .Databases}}<option value="{{.ID}}"{{if eq .ID $view.Source}} selected{{end}}>{{.Name}}{{if eq .ID $view.DatabaseID}} (database ini){{end}}</option>{{end}}
+					</select>
+				</div>
+				<div class="col-md-3">
+					<label for="diff-source-schema" class="form-label">Schema pembanding</label>
+					<input id="diff-source-schema" name="source_schema" type="text" class="form-control mono" value="{{.SourceSchema}}" maxlength="63" required>
+				</div>
+				<div class="col-md-2">
+					<button type="submit" class="btn btn-primary w-100"><i class="fas fa-magnifying-glass" aria-hidden="true"></i>Bandingkan</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+{{if .Compared}}
+<div class="row">
+	{{range .Stats}}
+	<div class="col-6 col-xl-3">
+		<div class="card">
+			<div class="content">
+				<div class="row">
+					<div class="col-4"><div class="icon-big text-center"><i class="fas {{.Icon}}" aria-hidden="true"></i></div></div>
+					<div class="col-8"><div class="detail"><p class="detail-subtitle">{{.Label}}</p><span class="number">{{.Value}}</span></div></div>
+				</div>
+				<div class="footer"><hr class="my-2"><div class="stats"><i class="fas fa-circle-info" aria-hidden="true"></i> {{.Note}}</div></div>
+			</div>
+		</div>
+	</div>
+	{{end}}
+</div>
+{{if .Changes}}
+<div class="card">
+	<div class="card-header"><i class="fas fa-list-check text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Perbedaan</h2><span class="card-header-meta mono">{{.Schema}} → {{.SourceName}}.{{.SourceSchema}}</span></div>
+	<div class="table-responsive">
+		<table class="table table-hover">
+			<thead><tr><th scope="col">Aksi</th><th scope="col">Objek</th><th scope="col">Nama</th><th scope="col">Saat ini</th><th scope="col">Diinginkan</th></tr></thead>
+			<tbody>
+				{{range .Changes}}
+				<tr>
+					<td><span class="badge diff-{{.Action}}">{{.Action.Label}}</span>{{if .Destructive}} <i class="fas fa-triangle-exclamation text-danger-soft" title="Data bisa hilang" aria-label="Data bisa hilang"></i>{{end}}</td>
+					<td>{{.Object}}</td>
+					<td class="mono">{{.Name}}</td>
+					<td class="mono diff-cell">{{if .Before}}{{.Before}}{{else}}-{{end}}</td>
+					<td class="mono diff-cell">{{if .After}}{{.After}}{{else}}-{{end}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</div>
+{{else}}
+<div class="box box-primary"><div class="empty-state"><i class="fas fa-circle-check" aria-hidden="true"></i><p class="mb-0">Tidak ada perbedaan. Schema <span class="mono">{{.Schema}}</span> sudah sama dengan <span class="mono">{{.SourceName}}.{{.SourceSchema}}</span>.</p></div></div>
+{{end}}
+{{if .Warnings}}
+<div class="alert alert-warning" role="note"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i><div><strong>Perlu ditinjau</strong><ul class="mb-0 ps-3">{{range .Warnings}}<li>{{.}}</li>{{end}}</ul></div></div>
+{{end}}
+{{if .SQL}}
+{{if .Validation}}<div class="alert alert-danger notice notice-error" role="alert"><i class="fas fa-circle-exclamation" aria-hidden="true"></i><div>SQL kandidat belum lolos validasi migration: {{.Validation}} Ubah SQL di bawah sebelum disimpan.</div></div>
+{{else}}<div class="alert alert-info" role="status"><i class="fas fa-circle-check" aria-hidden="true"></i><div>SQL kandidat lolos validasi migration. Tetap tinjau setiap perintah sebelum disimpan sebagai draft.</div></div>{{end}}
+{{if not .CanDraft}}
+<div class="card">
+	<div class="card-header"><i class="fas fa-code text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">SQL kandidat</h2><span class="card-header-meta">Hanya baca: Anda tidak punya akses membuat migration</span></div>
+	<div class="card-body"><pre class="code-block mono">{{.SQL}}</pre></div>
+</div>
+{{end}}
+{{end}}
+{{end}}
+{{end}}{{if and .Content .Content.CanDraft}}
+<div class="card">
+	<div class="card-header"><i class="fas fa-pen-to-square text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">SQL kandidat</h2><span class="card-header-meta">Bisa diubah sebelum disimpan</span></div>
+	<div class="card-body">
+		<p class="text-muted small">Draft yang tersimpan bisa diubah lagi, dianalisis dengan EXPLAIN, lalu dijalankan dari halaman detail migration.</p>
+		{{template "migration-form" .}}
+	</div>
+</div>
+{{end}}{{end}}

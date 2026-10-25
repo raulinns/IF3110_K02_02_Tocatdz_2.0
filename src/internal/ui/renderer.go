@@ -47,6 +47,7 @@ func viewerFromContext(ctx context.Context) viewer {
 type Features struct {
 	Migrations bool
 	Admin      bool
+	SchemaDiff bool
 }
 
 type Renderer struct {
@@ -61,6 +62,8 @@ func (r *Renderer) feature(name string) bool {
 		return r.features.Migrations
 	case "admin":
 		return r.features.Admin
+	case "schemadiff":
+		return r.features.SchemaDiff
 	}
 	return false
 }
