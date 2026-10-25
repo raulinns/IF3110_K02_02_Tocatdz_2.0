@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -22,6 +23,18 @@ type Config struct {
 type Service struct{ deps Config }
 
 var _ Viewer = (*Service)(nil)
+
+func (s *Service) Capabilities(ctx context.Context, id security.ID) (dbms.Capabilities, error) {
+	resolver, ok := s.deps.Reader.(dbms.CapabilityResolver)
+	if !ok {
+		return dbms.Features(dbms.PostgreSQL), nil
+	}
+	capabilities, err := resolver.Capabilities(ctx, id)
+	if err != nil {
+		return dbms.Capabilities{}, readError(err)
+	}
+	return capabilities, nil
+}
 
 func NewService(cfg Config) (*Service, error) {
 	for _, dependency := range []any{cfg.Directory, cfg.Reader, cfg.Authorizer} {

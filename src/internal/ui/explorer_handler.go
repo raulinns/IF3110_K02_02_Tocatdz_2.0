@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
@@ -87,34 +88,43 @@ type Explorer interface {
 }
 
 type SchemaView struct {
-	DatabaseID security.ID
-	Overview   SchemaOverview
+	DatabaseID   security.ID
+	Overview     SchemaOverview
+	Capabilities *dbms.Capabilities
 }
 
-func (v SchemaView) Tabs() DatabaseTabs { return databaseTabs(v.DatabaseID, "schema") }
+func (v SchemaView) Tabs() DatabaseTabs {
+	return databaseTabs(v.DatabaseID, "schema", v.Capabilities)
+}
 
 func (v SchemaView) TableHref(schema, table string) string {
 	return databasePath(v.DatabaseID, "tables", schema, table)
 }
 
 type TableView struct {
-	DatabaseID security.ID
-	Table      TableDetail
+	DatabaseID   security.ID
+	Table        TableDetail
+	Capabilities *dbms.Capabilities
 }
 
-func (v TableView) Tabs() DatabaseTabs { return databaseTabs(v.DatabaseID, "schema") }
+func (v TableView) Tabs() DatabaseTabs {
+	return databaseTabs(v.DatabaseID, "schema", v.Capabilities)
+}
 
 func (v TableView) RowsHref() string {
 	return databasePath(v.DatabaseID, "tables", v.Table.Schema, v.Table.Name, "rows")
 }
 
 type RowsView struct {
-	DatabaseID security.ID
-	Query      RowQuery
-	Page       RowPage
+	DatabaseID   security.ID
+	Query        RowQuery
+	Page         RowPage
+	Capabilities *dbms.Capabilities
 }
 
-func (v RowsView) Tabs() DatabaseTabs { return databaseTabs(v.DatabaseID, "schema") }
+func (v RowsView) Tabs() DatabaseTabs {
+	return databaseTabs(v.DatabaseID, "schema", v.Capabilities)
+}
 
 func (v RowsView) TableHref() string {
 	return databasePath(v.DatabaseID, "tables", v.Query.Schema, v.Query.Table)
@@ -174,7 +184,12 @@ func (ui *ExplorerUI) schema(w http.ResponseWriter, r *http.Request) {
 		_ = ui.renderer.RenderError(w, r, err)
 		return
 	}
-	_ = ui.renderer.Render(w, r, http.StatusOK, "explorer/schema", Page{Title: "Schema", Content: SchemaView{DatabaseID: request.DatabaseID, Overview: overview}})
+	capabilities, err := databaseCapabilities(r.Context(), ui.explorer, request.DatabaseID)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, err)
+		return
+	}
+	_ = ui.renderer.Render(w, r, http.StatusOK, "explorer/schema", Page{Title: "Schema", Content: SchemaView{DatabaseID: request.DatabaseID, Overview: overview, Capabilities: capabilities}})
 }
 
 func tableParams(r *http.Request) (string, string, error) {
@@ -209,7 +224,12 @@ func (ui *ExplorerUI) table(w http.ResponseWriter, r *http.Request) {
 		_ = ui.renderer.RenderError(w, r, security.ErrUnavailable)
 		return
 	}
-	_ = ui.renderer.Render(w, r, http.StatusOK, "explorer/table", Page{Title: schema + "." + table, Content: TableView{DatabaseID: request.DatabaseID, Table: detail}})
+	capabilities, err := databaseCapabilities(r.Context(), ui.explorer, request.DatabaseID)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, err)
+		return
+	}
+	_ = ui.renderer.Render(w, r, http.StatusOK, "explorer/table", Page{Title: schema + "." + table, Content: TableView{DatabaseID: request.DatabaseID, Table: detail, Capabilities: capabilities}})
 }
 
 func rowQuery(r *http.Request, schema, table string) (RowQuery, error) {
@@ -266,5 +286,10 @@ func (ui *ExplorerUI) rows(w http.ResponseWriter, r *http.Request) {
 		_ = ui.renderer.RenderError(w, r, security.ErrUnavailable)
 		return
 	}
-	_ = ui.renderer.Render(w, r, http.StatusOK, "explorer/rows", Page{Title: "Data " + schema + "." + table, Content: RowsView{DatabaseID: request.DatabaseID, Query: query, Page: page}})
+	capabilities, err := databaseCapabilities(r.Context(), ui.explorer, request.DatabaseID)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, err)
+		return
+	}
+	_ = ui.renderer.Render(w, r, http.StatusOK, "explorer/rows", Page{Title: "Data " + schema + "." + table, Content: RowsView{DatabaseID: request.DatabaseID, Query: query, Page: page, Capabilities: capabilities}})
 }

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
@@ -10,8 +11,9 @@ import (
 type ExplorerAdapter struct{ viewer explorer.Viewer }
 
 var (
-	_ DatabaseLister = (*ExplorerAdapter)(nil)
-	_ Explorer       = (*ExplorerAdapter)(nil)
+	_ DatabaseLister          = (*ExplorerAdapter)(nil)
+	_ Explorer                = (*ExplorerAdapter)(nil)
+	_ dbms.CapabilityResolver = (*ExplorerAdapter)(nil)
 )
 
 func NewExplorerAdapter(viewer explorer.Viewer) (*ExplorerAdapter, error) {
@@ -19,6 +21,14 @@ func NewExplorerAdapter(viewer explorer.Viewer) (*ExplorerAdapter, error) {
 		return nil, security.ErrInvalidInput
 	}
 	return &ExplorerAdapter{viewer: viewer}, nil
+}
+
+func (a *ExplorerAdapter) Capabilities(ctx context.Context, id security.ID) (dbms.Capabilities, error) {
+	resolver, ok := a.viewer.(dbms.CapabilityResolver)
+	if !ok {
+		return dbms.Features(dbms.PostgreSQL), nil
+	}
+	return resolver.Capabilities(ctx, id)
 }
 
 func (a *ExplorerAdapter) ListAccessible(ctx context.Context, principal security.Principal) ([]DatabaseSummary, error) {
