@@ -1,0 +1,17 @@
+{{define "content"}}{{with .Content}}
+<section>
+ <p class="breadcrumb"><a href="{{.DetailHref}}">Kembali ke draft migration</a> / Execution plan</p>
+ <h1>{{.Mode}}</h1>
+ <p>Statement {{.Statement}} dari draft revision {{.Revision}}. Hasil menggambarkan kondisi database saat analisis, bukan jaminan plan saat migration dijalankan nanti.</p>
+ <h2>SQL yang dianalisis</h2><pre class="code-block mono">{{.SQL}}</pre>
+ <dl class="facts"><dt>Planning time (ms)</dt><dd>{{.Planning}}</dd><dt>Execution time (ms)</dt><dd>{{.Execution}}</dd><dt>Checksum SQL draft</dt><dd class="mono">{{.Checksum}}</dd></dl>
+ <p>Cost adalah unit estimasi planner, bukan milidetik. Actual rows dan actual time per node adalah rata-rata per loop; lihat loops untuk memahami total pekerjaan. Tanda - berarti metrik tidak tersedia.</p>
+ <div class="table-wrap"><table class="table">
+  <thead><tr><th>Node / scan</th><th>Relation</th><th>Index</th><th>Join / strategy</th><th>Startup cost</th><th>Total cost</th><th>Estimated rows</th><th>Actual startup (ms)</th><th>Actual total (ms)</th><th>Actual rows</th><th>Loops</th></tr></thead>
+  <tbody>{{range .Lines}}<tr><td><pre class="mono">{{.Prefix}}{{.Type}}</pre></td><td class="mono">{{.Relation}}</td><td class="mono">{{.Index}}</td><td>{{.Join}}</td><td>{{.Startup}}</td><td>{{.Cost}}</td><td>{{.Rows}}</td><td>{{.ActualStartup}}</td><td>{{.ActualTotal}}</td><td>{{.ActualRows}}</td><td>{{.Loops}}</td></tr>{{end}}</tbody>
+ </table></div>
+ <details><summary>JSON plan terstruktur</summary><pre class="code-block mono">{{.JSON}}</pre></details>
+ <p>Draft dan riwayat tidak berubah. Kembali ke draft untuk mengubah SQL atau menjalankan migration.</p>
+ <a class="button button-ghost" href="{{.DetailHref}}">Kembali ke draft</a>
+</section>
+{{end}}{{end}}
