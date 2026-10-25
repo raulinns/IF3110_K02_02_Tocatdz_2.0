@@ -39,8 +39,14 @@ func (s *Service) Execute(ctx context.Context, req Request, id security.ID, revi
 		if record.Status != DraftStatus || record.Revision != revision {
 			return security.ErrConflict
 		}
-		if err := s.deps.Validator.Validate(locked, record.SQL); err != nil {
-			return safeValidationError(err)
+		var validationErr error
+		if validator, ok := s.deps.Validator.(DatabaseValidator); ok {
+			validationErr = validator.ValidateDatabase(locked, req.DatabaseID, record.SQL)
+		} else {
+			validationErr = s.deps.Validator.Validate(locked, record.SQL)
+		}
+		if validationErr != nil {
+			return safeValidationError(validationErr)
 		}
 		account, err := s.deps.Accounts.FindAccount(locked, req.Principal.UserID)
 		if err != nil {
@@ -76,6 +82,13 @@ func (s *Service) Execute(ctx context.Context, req Request, id security.ID, revi
 			}
 			return err
 		}
+		journaled := false
+		if targetJournal, ok := target.(JournaledTarget); ok {
+			if err := targetJournal.StartReceipt(locked, Receipt{Key: keyFor(claimed)}); err != nil {
+				return s.finish(locked, claimed, Failed, FailureConnection, &result)
+			}
+			journaled = true
+		}
 		tx, err := target.Begin(locked)
 		if err != nil || missing(tx) {
 			return s.finish(locked, claimed, Failed, FailureConnection, &result)
@@ -101,9 +114,15 @@ func (s *Service) Execute(ctx context.Context, req Request, id security.ID, revi
 			return err
 		}
 		if err := tx.Execute(locked, claimed.SQL); err != nil {
+			if journaled {
+				return s.rollbackUncertain(locked, tx, &closed)
+			}
 			return s.rollback(locked, tx, claimed, &result, &closed)
 		}
 		if err := tx.WriteReceipt(locked, Receipt{Key: keyFor(claimed)}); err != nil {
+			if journaled {
+				return s.rollbackUncertain(locked, tx, &closed)
+			}
 			return s.rollback(locked, tx, claimed, &result, &closed)
 		}
 		if err := tx.Commit(locked); err != nil {
@@ -122,6 +141,15 @@ func (s *Service) Execute(ctx context.Context, req Request, id security.ID, revi
 		return result, security.ErrUnavailable
 	}
 	return result, nil
+}
+
+func (s *Service) rollbackUncertain(ctx context.Context, tx Transaction, closed *bool) error {
+	cleanup, stop := cleanupContext(ctx)
+	defer stop()
+	if err := tx.Rollback(cleanup); err == nil {
+		*closed = true
+	}
+	return ErrExecutionUncertain
 }
 
 func (s *Service) finish(ctx context.Context, record Migration, status Status, failure Failure, result *ExecutionResult) error {
@@ -186,6 +214,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, database, id security.ID) (E
 		}
 		lookup, err := target.LookupReceipt(locked, keyFor(record))
 		if err != nil || !lookup.Quiescent {
+			return ErrExecutionUncertain
+		}
+		if lookup.Started && lookup.Receipt == nil {
 			return ErrExecutionUncertain
 		}
 		status, failure := Failed, FailureInterrupted

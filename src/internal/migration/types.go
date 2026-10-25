@@ -111,6 +111,7 @@ type Receipt struct{ Key ExecutionKey }
 type ReceiptLookup struct {
 	Receipt   *Receipt
 	Quiescent bool
+	Started   bool
 }
 
 type Application interface {
