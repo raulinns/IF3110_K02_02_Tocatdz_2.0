@@ -19,7 +19,7 @@ const (
 	testGroupView  security.ID = "33333333-3333-4333-8333-333333333333"
 	testGroupEdit  security.ID = "44444444-4444-4444-8444-444444444444"
 	testDatabaseID security.ID = "55555555-5555-4555-8555-555555555555"
-	testMySQLID    security.ID = "77777777-7777-4777-8777-777777777777"
+	testInventory  security.ID = "77777777-7777-4777-8777-777777777777"
 )
 
 func integrationStore(t *testing.T) (*Store, *platformsqlc.Queries, func()) {
@@ -96,11 +96,11 @@ func TestTargetCatalogRegistersEncryptedDatabaseAndGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dsn := security.NewSecret("root:private@tcp(mysql:3306)/inventory")
+	dsn := security.NewSecret("postgres://root:private@db:5432/inventory")
 	input := ManagedDatabaseInput{
-		ID:     testMySQLID,
-		Name:   "inventory mysql",
-		Engine: dbms.MySQL,
+		ID:     testInventory,
+		Name:   "inventory arsip",
+		Engine: dbms.PostgreSQL,
 		DSN:    dsn,
 		Active: true,
 	}
@@ -112,22 +112,22 @@ func TestTargetCatalogRegistersEncryptedDatabaseAndGrant(t *testing.T) {
 	if err := store.pool.QueryRow(
 		context.Background(),
 		"SELECT connection_secret FROM managed_databases WHERE id = $1",
-		string(testMySQLID),
+		string(testInventory),
 	).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(stored, []byte("private")) {
 		t.Fatal("Register() persisted plaintext credentials")
 	}
-	target, err := catalog.Target(context.Background(), testMySQLID)
-	if err != nil || target.Engine != dbms.MySQL || target.DSN.Reveal() != dsn.Reveal() {
+	target, err := catalog.Target(context.Background(), testInventory)
+	if err != nil || target.Engine != dbms.PostgreSQL || target.DSN.Reveal() != dsn.Reveal() {
 		t.Fatalf("Target() = (%+v, %v)", target, err)
 	}
 
-	if err := store.GrantGroupAccess(context.Background(), testGroupView, testMySQLID, security.AccessViewOnly); err != nil {
+	if err := store.GrantGroupAccess(context.Background(), testGroupView, testInventory, security.AccessViewOnly); err != nil {
 		t.Fatalf("GrantGroupAccess() returned error: %v", err)
 	}
-	access, err := store.AccessForDatabase(context.Background(), testUserID, testMySQLID)
+	access, err := store.AccessForDatabase(context.Background(), testUserID, testInventory)
 	if err != nil || len(access.GroupAccess) != 1 || access.GroupAccess[0] != security.AccessViewOnly {
 		t.Fatalf("AccessForDatabase() = (%+v, %v)", access, err)
 	}

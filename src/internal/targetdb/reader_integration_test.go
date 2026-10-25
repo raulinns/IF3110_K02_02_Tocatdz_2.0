@@ -3,11 +3,9 @@ package targetdb
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
-	mysqladapter "github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms/mysql"
 	postgresadapter "github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms/postgresql"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
@@ -46,32 +44,6 @@ func TestReaderAgainstPostgreSQL(t *testing.T) {
 	defer pool.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS viewer_test CASCADE")
 
 	verifyReader(t, dbms.PostgreSQL, pool, "viewer_test")
-}
-
-func TestReaderAgainstMySQL(t *testing.T) {
-	dsn := os.Getenv("TEST_MYSQL_TARGET_DSN")
-	if dsn == "" {
-		t.Skip("TEST_MYSQL_TARGET_DSN is not configured")
-	}
-	pool, err := mysqladapter.New().Open(context.Background(), dbms.SQLConfig{DSN: dsn})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-
-	statements := []string{
-		"DROP TABLE IF EXISTS items",
-		"CREATE TABLE items (id bigint PRIMARY KEY, name varchar(100) NOT NULL, payload blob, INDEX items_name_idx (name))",
-		"INSERT INTO items (id, name, payload) VALUES (1, 'alpha', x'0001'), (2, 'beta', NULL)",
-	}
-	for _, statement := range statements {
-		if _, err := pool.ExecContext(context.Background(), statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	defer pool.ExecContext(context.Background(), "DROP TABLE IF EXISTS items")
-
-	verifyReader(t, dbms.MySQL, pool, "if3110_target")
 }
 
 func verifyReader(t *testing.T, engine dbms.Engine, pool *sql.DB, schemaName string) {

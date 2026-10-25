@@ -34,8 +34,6 @@ func quoteIdentifier(engine dbms.Engine, value string) (string, error) {
 	switch engine {
 	case dbms.PostgreSQL:
 		return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`, nil
-	case dbms.MySQL:
-		return "`" + strings.ReplaceAll(value, "`", "``") + "`", nil
 	default:
 		return "", security.ErrUnavailable
 	}
@@ -52,25 +50,18 @@ func readerError(err error) error {
 }
 
 func tableKind(engine dbms.Engine, raw string) (explorer.TableKind, error) {
-	switch engine {
-	case dbms.PostgreSQL:
-		switch raw {
-		case "r":
-			return explorer.KindTable, nil
-		case "p":
-			return explorer.KindPartitionedTable, nil
-		case "v":
-			return explorer.KindView, nil
-		case "m":
-			return explorer.KindMaterializedView, nil
-		}
-	case dbms.MySQL:
-		switch strings.ToUpper(raw) {
-		case "BASE TABLE":
-			return explorer.KindTable, nil
-		case "VIEW", "SYSTEM VIEW":
-			return explorer.KindView, nil
-		}
+	if engine != dbms.PostgreSQL {
+		return "", security.ErrUnavailable
+	}
+	switch raw {
+	case "r":
+		return explorer.KindTable, nil
+	case "p":
+		return explorer.KindPartitionedTable, nil
+	case "v":
+		return explorer.KindView, nil
+	case "m":
+		return explorer.KindMaterializedView, nil
 	}
 	return "", security.ErrUnavailable
 }
@@ -91,13 +82,6 @@ WHERE c.relkind IN ('r', 'p', 'v', 'm')
   AND n.nspname <> 'information_schema'
   AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
 ORDER BY n.nspname, c.relname
-LIMIT 10001`
-	case dbms.MySQL:
-		query = `
-SELECT table_schema, table_name, table_type
-FROM information_schema.tables
-WHERE table_schema = DATABASE()
-ORDER BY table_schema, table_name
 LIMIT 10001`
 	default:
 		return nil, security.ErrUnavailable
@@ -148,23 +132,19 @@ func (r *Reader) Table(
 	if err != nil {
 		return explorer.Table{}, err
 	}
+	if engine != dbms.PostgreSQL {
+		return explorer.Table{}, security.ErrUnavailable
+	}
 	result := explorer.Table{Schema: schemaName, Name: tableName}
 	if result.Kind, err = relationKind(ctx, pool, engine, schemaName, tableName); err != nil {
 		return explorer.Table{}, err
 	}
-	if result.Columns, err = readColumns(ctx, pool, engine, schemaName, tableName); err != nil {
+	if result.Columns, err = readColumns(ctx, pool, schemaName, tableName); err != nil {
 		return explorer.Table{}, err
 	}
-	if engine == dbms.PostgreSQL {
-		result.Constraints, err = postgresConstraints(ctx, pool, schemaName, tableName)
-		if err == nil {
-			result.Indexes, err = postgresIndexes(ctx, pool, schemaName, tableName)
-		}
-	} else {
-		result.Constraints, err = mysqlConstraints(ctx, pool, schemaName, tableName)
-		if err == nil {
-			result.Indexes, err = mysqlIndexes(ctx, pool, schemaName, tableName)
-		}
+	result.Constraints, err = postgresConstraints(ctx, pool, schemaName, tableName)
+	if err == nil {
+		result.Indexes, err = postgresIndexes(ctx, pool, schemaName, tableName)
 	}
 	if err != nil {
 		return explorer.Table{}, err
@@ -174,19 +154,11 @@ func (r *Reader) Table(
 
 func relationKind(ctx context.Context, pool *sql.DB, engine dbms.Engine, schemaName, tableName string) (explorer.TableKind, error) {
 	var raw string
-	var err error
-	if engine == dbms.PostgreSQL {
-		err = pool.QueryRowContext(ctx, `
+	err := pool.QueryRowContext(ctx, `
 SELECT c.relkind::text
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r', 'p', 'v', 'm')`, schemaName, tableName).Scan(&raw)
-	} else {
-		err = pool.QueryRowContext(ctx, `
-SELECT table_type
-FROM information_schema.tables
-WHERE table_schema = ? AND table_name = ?`, schemaName, tableName).Scan(&raw)
-	}
 	if err == sql.ErrNoRows {
 		return "", security.ErrNotFound
 	}
@@ -196,20 +168,12 @@ WHERE table_schema = ? AND table_name = ?`, schemaName, tableName).Scan(&raw)
 	return tableKind(engine, raw)
 }
 
-func readColumns(ctx context.Context, pool *sql.DB, engine dbms.Engine, schemaName, tableName string) ([]explorer.Column, error) {
-	query := `
+func readColumns(ctx context.Context, pool *sql.DB, schemaName, tableName string) ([]explorer.Column, error) {
+	rows, err := pool.QueryContext(ctx, `
 SELECT column_name, data_type, is_nullable, column_default
 FROM information_schema.columns
 WHERE table_schema = $1 AND table_name = $2
-ORDER BY ordinal_position`
-	if engine == dbms.MySQL {
-		query = `
-SELECT column_name, data_type, is_nullable, column_default
-FROM information_schema.columns
-WHERE table_schema = ? AND table_name = ?
-ORDER BY ordinal_position`
-	}
-	rows, err := pool.QueryContext(ctx, query, schemaName, tableName)
+ORDER BY ordinal_position`, schemaName, tableName)
 	if err != nil {
 		return nil, readerError(err)
 	}
@@ -277,77 +241,15 @@ ORDER BY idx.relname`, schemaName, tableName)
 	return result, readerError(rows.Err())
 }
 
-func mysqlConstraints(ctx context.Context, pool *sql.DB, schemaName, tableName string) ([]explorer.Constraint, error) {
-	rows, err := pool.QueryContext(ctx, `
-SELECT tc.constraint_name, tc.constraint_type,
-       COALESCE(GROUP_CONCAT(kcu.column_name ORDER BY kcu.ordinal_position SEPARATOR ', '), '')
-FROM information_schema.table_constraints tc
-LEFT JOIN information_schema.key_column_usage kcu
-  ON kcu.constraint_schema = tc.constraint_schema
- AND kcu.table_name = tc.table_name
- AND kcu.constraint_name = tc.constraint_name
-WHERE tc.table_schema = ? AND tc.table_name = ?
-GROUP BY tc.constraint_name, tc.constraint_type
-ORDER BY tc.constraint_name`, schemaName, tableName)
-	if err != nil {
-		return nil, readerError(err)
-	}
-	defer rows.Close()
-	result := []explorer.Constraint{}
-	for rows.Next() {
-		var item explorer.Constraint
-		if err := rows.Scan(&item.Name, &item.Type, &item.Definition); err != nil {
-			return nil, readerError(err)
-		}
-		result = append(result, item)
-	}
-	return result, readerError(rows.Err())
-}
-
-func mysqlIndexes(ctx context.Context, pool *sql.DB, schemaName, tableName string) ([]explorer.Index, error) {
-	rows, err := pool.QueryContext(ctx, `
-SELECT index_name,
-       GROUP_CONCAT(column_name ORDER BY seq_in_index SEPARATOR ', '),
-       MIN(non_unique) = 0,
-       index_name = 'PRIMARY'
-FROM information_schema.statistics
-WHERE table_schema = ? AND table_name = ?
-GROUP BY index_name
-ORDER BY index_name`, schemaName, tableName)
-	if err != nil {
-		return nil, readerError(err)
-	}
-	defer rows.Close()
-	result := []explorer.Index{}
-	for rows.Next() {
-		var item explorer.Index
-		if err := rows.Scan(&item.Name, &item.Definition, &item.Unique, &item.Primary); err != nil {
-			return nil, readerError(err)
-		}
-		result = append(result, item)
-	}
-	return result, readerError(rows.Err())
-}
-
-func primaryKeyColumns(ctx context.Context, tx *sql.Tx, engine dbms.Engine, schemaName, tableName string) ([]string, error) {
-	var query string
-	if engine == dbms.PostgreSQL {
-		query = `
+func primaryKeyColumns(ctx context.Context, tx *sql.Tx, schemaName, tableName string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
 SELECT a.attname
 FROM pg_catalog.pg_index i
 JOIN pg_catalog.pg_class rel ON rel.oid = i.indrelid
 JOIN pg_catalog.pg_namespace n ON n.oid = rel.relnamespace
 JOIN pg_catalog.pg_attribute a ON a.attrelid = rel.oid AND a.attnum = ANY(i.indkey)
 WHERE n.nspname = $1 AND rel.relname = $2 AND i.indisprimary
-ORDER BY array_position(i.indkey, a.attnum)`
-	} else {
-		query = `
-SELECT column_name
-FROM information_schema.statistics
-WHERE table_schema = ? AND table_name = ? AND index_name = 'PRIMARY'
-ORDER BY seq_in_index`
-	}
-	rows, err := tx.QueryContext(ctx, query, schemaName, tableName)
+ORDER BY array_position(i.indkey, a.attnum)`, schemaName, tableName)
 	if err != nil {
 		return nil, readerError(err)
 	}
@@ -392,7 +294,7 @@ func (r *Reader) Rows(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	primaryKey, err := primaryKeyColumns(ctx, tx, engine, schemaName, tableName)
+	primaryKey, err := primaryKeyColumns(ctx, tx, schemaName, tableName)
 	if err != nil {
 		return explorer.RowBatch{}, err
 	}
@@ -411,14 +313,8 @@ func (r *Reader) Rows(
 		order = explorer.OrderPrimaryKey
 	}
 
-	query := "SELECT * FROM " + quotedSchema + "." + quotedTable + orderClause
-	args := []any{options.FetchLimit, options.Offset}
-	if engine == dbms.PostgreSQL {
-		query += " LIMIT $1 OFFSET $2"
-	} else {
-		query += " LIMIT ? OFFSET ?"
-	}
-	rows, err := tx.QueryContext(ctx, query, args...)
+	query := "SELECT * FROM " + quotedSchema + "." + quotedTable + orderClause + " LIMIT $1 OFFSET $2"
+	rows, err := tx.QueryContext(ctx, query, options.FetchLimit, options.Offset)
 	if err != nil {
 		return explorer.RowBatch{}, readerError(err)
 	}
@@ -465,8 +361,7 @@ func cellFromValue(value any, databaseType string) (explorer.Cell, error) {
 	}
 	switch typed := value.(type) {
 	case []byte:
-		upperType := strings.ToUpper(databaseType)
-		if strings.Contains(upperType, "BLOB") || strings.Contains(upperType, "BINARY") || upperType == "BYTEA" {
+		if strings.EqualFold(databaseType, "BYTEA") {
 			return explorer.PreviewBinary(typed), nil
 		}
 		return explorer.PreviewText(string(typed))

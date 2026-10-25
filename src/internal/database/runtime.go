@@ -4,7 +4,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
-	mysqladapter "github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms/mysql"
 	postgresqladapter "github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms/postgresql"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/platformstore"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
@@ -37,7 +36,6 @@ func NewRuntime(platformPool *pgxpool.Pool, connectionKey []byte) (*Runtime, err
 	}
 	registry, err := dbms.NewRegistry[dbms.SQLConnector](
 		postgresqladapter.New(),
-		mysqladapter.New(),
 	)
 	if err != nil {
 		return nil, err

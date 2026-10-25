@@ -20,7 +20,7 @@ func TestNewRuntimeBuildsDatabaseDependencies(t *testing.T) {
 		t.Fatalf("NewRuntime() left a dependency nil: %+v", runtime)
 	}
 	engines := runtime.Registry.Engines()
-	if len(engines) != 2 || engines[0] != dbms.MySQL || engines[1] != dbms.PostgreSQL {
+	if len(engines) != 1 || engines[0] != dbms.PostgreSQL {
 		t.Fatalf("registered engines = %v", engines)
 	}
 	if err := runtime.Close(); err != nil {

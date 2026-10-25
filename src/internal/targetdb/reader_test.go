@@ -15,7 +15,6 @@ func TestQuoteIdentifierUsesSelectedDialect(t *testing.T) {
 		want   string
 	}{
 		{engine: dbms.PostgreSQL, input: `order"items`, want: `"order""items"`},
-		{engine: dbms.MySQL, input: "order`items", want: "`order``items`"},
 	}
 	for _, test := range tests {
 		got, err := quoteIdentifier(test.engine, test.input)
@@ -37,7 +36,7 @@ func TestCellFromValuePreservesNullTextBinaryAndTime(t *testing.T) {
 	}{
 		{name: "null", value: nil, null: true},
 		{name: "text bytes", value: []byte("hello"), dbType: "VARCHAR", want: "hello", encoding: explorer.EncodingText},
-		{name: "binary", value: []byte{0, 1, 2}, dbType: "BLOB", want: `\x000102`, encoding: explorer.EncodingHex},
+		{name: "binary", value: []byte{0, 1, 2}, dbType: "BYTEA", want: `\x000102`, encoding: explorer.EncodingHex},
 		{name: "time", value: now, want: "2026-10-25T08:30:00Z", encoding: explorer.EncodingText},
 	}
 	for _, test := range tests {

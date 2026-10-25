@@ -17,7 +17,7 @@ func TestConnectionProtectorRoundTripIsBoundToDatabase(t *testing.T) {
 	protector.entropy = bytes.NewReader(bytes.Repeat([]byte{3}, protector.aead.NonceSize()))
 
 	databaseID := security.ID("11111111-1111-4111-8111-111111111111")
-	dsn := security.NewSecret("mysql-user:private-password@tcp(mysql:3306)/inventory")
+	dsn := security.NewSecret("postgres://app:private-password@db:5432/inventory")
 	ciphertext, err := protector.Seal(context.Background(), databaseID, dsn)
 	if err != nil {
 		t.Fatalf("Seal() returned error: %v", err)

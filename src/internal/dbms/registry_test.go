@@ -18,9 +18,8 @@ func TestRegistryResolvesAdapterByEngine(t *testing.T) {
 	t.Parallel()
 
 	postgres := &stubAdapter{engine: PostgreSQL}
-	mysql := &stubAdapter{engine: MySQL}
 
-	registry, err := NewRegistry(postgres, mysql)
+	registry, err := NewRegistry(postgres)
 	if err != nil {
 		t.Fatalf("NewRegistry() returned error: %v", err)
 	}
@@ -39,11 +38,6 @@ func TestRegistryResolvesAdapterByEngine(t *testing.T) {
 			name:   "PostgreSQL alias",
 			engine: Engine("postgres"),
 			want:   postgres,
-		},
-		{
-			name:   "MySQL",
-			engine: MySQL,
-			want:   mysql,
 		},
 	}
 
@@ -77,14 +71,13 @@ func TestRegistryReturnsRegisteredEnginesInStableOrder(t *testing.T) {
 
 	registry, err := NewRegistry(
 		&stubAdapter{engine: PostgreSQL},
-		&stubAdapter{engine: MySQL},
 	)
 	if err != nil {
 		t.Fatalf("NewRegistry() returned error: %v", err)
 	}
 
 	got := registry.Engines()
-	want := []Engine{MySQL, PostgreSQL}
+	want := []Engine{PostgreSQL}
 
 	if !slices.Equal(got, want) {
 		t.Fatalf("Engines() = %v, want %v", got, want)
@@ -140,19 +133,17 @@ func TestRegistryRejectsUnsupportedEngine(t *testing.T) {
 func TestRegistryReturnsNotFoundForUnregisteredEngine(t *testing.T) {
 	t.Parallel()
 
-	registry, err := NewRegistry(
-		&stubAdapter{engine: PostgreSQL},
-	)
+	registry, err := NewRegistry[*stubAdapter]()
 	if err != nil {
 		t.Fatalf("NewRegistry() returned error: %v", err)
 	}
 
-	got, err := registry.Resolve(MySQL)
+	got, err := registry.Resolve(PostgreSQL)
 
 	if !errors.Is(err, ErrAdapterNotFound) {
 		t.Fatalf(
 			"Resolve(%q) error = %v, want ErrAdapterNotFound",
-			MySQL,
+			PostgreSQL,
 			err,
 		)
 	}
@@ -160,7 +151,7 @@ func TestRegistryReturnsNotFoundForUnregisteredEngine(t *testing.T) {
 	if got != nil {
 		t.Fatalf(
 			"Resolve(%q) returned adapter %p, want nil",
-			MySQL,
+			PostgreSQL,
 			got,
 		)
 	}

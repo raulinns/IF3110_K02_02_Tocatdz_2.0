@@ -35,14 +35,14 @@ func (c *failingConnector) Open(context.Context, dbms.SQLConfig) (*sql.DB, error
 func TestManagerSelectsConnectorByCatalogEngine(t *testing.T) {
 	databaseID := security.ID("11111111-1111-4111-8111-111111111111")
 	driverErr := errors.New("private connection failure")
-	connector := &failingConnector{engine: dbms.MySQL, err: driverErr}
+	connector := &failingConnector{engine: dbms.PostgreSQL, err: driverErr}
 	registry, err := dbms.NewRegistry[dbms.SQLConnector](connector)
 	if err != nil {
 		t.Fatal(err)
 	}
 	manager, err := NewManager(fakeCatalog{target: Target{
-		ID: databaseID, Engine: dbms.MySQL,
-		DSN: security.NewSecret("user:password@tcp(mysql:3306)/inventory"), Active: true,
+		ID: databaseID, Engine: dbms.PostgreSQL,
+		DSN: security.NewSecret("postgres://user:password@db:5432/inventory"), Active: true,
 	}}, registry)
 	if err != nil {
 		t.Fatal(err)
