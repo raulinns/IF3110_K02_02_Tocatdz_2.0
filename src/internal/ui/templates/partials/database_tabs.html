@@ -2,6 +2,6 @@
 <ul class="nav nav-tabs" aria-label="Bagian database">
 	<li class="nav-item"><a class="nav-link{{if eq .Active "schema"}} active{{end}}" href="{{.SchemaHref}}"{{if eq .Active "schema"}} aria-current="page"{{end}}><i class="fas fa-table" aria-hidden="true"></i> Schema</a></li>
 	{{if feature "migrations"}}<li class="nav-item"><a class="nav-link{{if eq .Active "migrations"}} active{{end}}" href="{{.MigrationsHref}}"{{if eq .Active "migrations"}} aria-current="page"{{end}}><i class="fas fa-code-branch" aria-hidden="true"></i> Migration</a></li>{{end}}
-	{{if feature "schemadiff"}}<li class="nav-item"><a class="nav-link{{if eq .Active "diff"}} active{{end}}" href="{{.DiffHref}}"{{if eq .Active "diff"}} aria-current="page"{{end}}><i class="fas fa-code-compare" aria-hidden="true"></i> Schema diff</a></li>{{end}}
+	{{if and (feature "schemadiff") .SchemaDiff}}<li class="nav-item"><a class="nav-link{{if eq .Active "diff"}} active{{end}}" href="{{.DiffHref}}"{{if eq .Active "diff"}} aria-current="page"{{end}}><i class="fas fa-code-compare" aria-hidden="true"></i> Schema diff</a></li>{{end}}
 </ul>
 {{end}}

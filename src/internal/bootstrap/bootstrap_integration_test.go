@@ -130,7 +130,7 @@ func TestDemoFlowAgainstPostgreSQL(t *testing.T) {
 	}
 	database := match(t, databaseLink, w.Body.String())
 	base := "/databases/" + database
-	if w := e.do("GET", base+"/schema", nil, cookie); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "pelanggan") {
+	if w := e.do("GET", base+"/schema", nil, cookie); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "pelanggan") || !strings.Contains(w.Body.String(), base+"/schema-diff") {
 		t.Fatal("schema page missing table")
 	}
 	if w := e.do("GET", base+"/tables/public/pelanggan", nil, cookie); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "pelanggan_pkey") {

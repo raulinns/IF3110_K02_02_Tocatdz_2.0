@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/admin"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -75,18 +76,22 @@ func (s *AdminStore) Groups(ctx context.Context) ([]admin.Group, error) {
 }
 
 func (s *AdminStore) Connections(ctx context.Context) ([]admin.Connection, error) {
-	rows, err := s.pool.Query(ctx, "SELECT id::text, name FROM managed_databases ORDER BY name")
+	rows, err := s.pool.Query(ctx, "SELECT id::text, name, engine FROM managed_databases ORDER BY name")
 	if err != nil {
 		return nil, mapError(err)
 	}
 	defer rows.Close()
 	var result []admin.Connection
 	for rows.Next() {
-		var id, name string
-		if err := rows.Scan(&id, &name); err != nil {
+		var id, name, rawEngine string
+		if err := rows.Scan(&id, &name, &rawEngine); err != nil {
 			return nil, mapError(err)
 		}
-		result = append(result, admin.Connection{ID: security.ID(id), Name: name})
+		engine, err := dbms.ParseEngine(rawEngine)
+		if err != nil {
+			return nil, security.ErrUnavailable
+		}
+		result = append(result, admin.Connection{ID: security.ID(id), Name: name, Engine: engine})
 	}
 	return result, mapError(rows.Err())
 }
@@ -252,7 +257,7 @@ func (s *AdminStore) CreateConnection(ctx context.Context, actor security.Princi
 		return err
 	}
 	return s.mutate(ctx, actor, func(tx pgx.Tx) (change, []security.ID, error) {
-		_, err := tx.Exec(ctx, "INSERT INTO managed_databases (id, name, dsn_ciphertext) VALUES ($1, $2, $3)", string(connection.ID), connection.Name, sealed)
+		_, err := tx.Exec(ctx, "INSERT INTO managed_databases (id, name, engine, dsn_ciphertext) VALUES ($1, $2, $3, $4)", string(connection.ID), connection.Name, string(connection.Engine), sealed)
 		return noChange, nil, mapError(err)
 	})
 }

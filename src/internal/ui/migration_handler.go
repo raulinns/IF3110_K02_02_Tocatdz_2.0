@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
@@ -112,10 +113,11 @@ type MigrationForm struct {
 }
 
 type MigrationListView struct {
-	DatabaseID security.ID
-	Migrations []MigrationSummary
-	CanEdit    bool
-	Page       MigrationHistoryPage
+	DatabaseID   security.ID
+	Migrations   []MigrationSummary
+	CanEdit      bool
+	Page         MigrationHistoryPage
+	Capabilities *dbms.Capabilities
 }
 
 func (v MigrationListView) historyHref(page int) string {
@@ -134,7 +136,9 @@ func (v MigrationListView) NextHref() string {
 	return v.historyHref(v.Page.Page + 1)
 }
 
-func (v MigrationListView) Tabs() DatabaseTabs { return databaseTabs(v.DatabaseID, "migrations") }
+func (v MigrationListView) Tabs() DatabaseTabs {
+	return databaseTabs(v.DatabaseID, "migrations", v.Capabilities)
+}
 
 func (v MigrationListView) NewHref() string { return databasePath(v.DatabaseID, "migrations", "new") }
 
@@ -143,21 +147,27 @@ func (v MigrationListView) DetailHref(id security.ID) string {
 }
 
 type MigrationEditorView struct {
-	DatabaseID security.ID
-	Form       MigrationForm
+	DatabaseID   security.ID
+	Form         MigrationForm
+	Capabilities *dbms.Capabilities
 }
 
-func (v MigrationEditorView) Tabs() DatabaseTabs { return databaseTabs(v.DatabaseID, "migrations") }
+func (v MigrationEditorView) Tabs() DatabaseTabs {
+	return databaseTabs(v.DatabaseID, "migrations", v.Capabilities)
+}
 
 type MigrationDetailView struct {
-	DatabaseID security.ID
-	Migration  MigrationDetail
-	Editable   bool
-	Form       MigrationForm
-	CanPlan    bool
+	DatabaseID   security.ID
+	Migration    MigrationDetail
+	Editable     bool
+	Form         MigrationForm
+	CanPlan      bool
+	Capabilities *dbms.Capabilities
 }
 
-func (v MigrationDetailView) Tabs() DatabaseTabs { return databaseTabs(v.DatabaseID, "migrations") }
+func (v MigrationDetailView) Tabs() DatabaseTabs {
+	return databaseTabs(v.DatabaseID, "migrations", v.Capabilities)
+}
 
 func (v MigrationDetailView) ExecuteAction() string {
 	return databasePath(v.DatabaseID, "migrations", string(v.Migration.ID), "execute")
@@ -233,7 +243,12 @@ func (ui *MigrationUI) history(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	view := MigrationListView{DatabaseID: request.DatabaseID, Migrations: page.Items, Page: page, CanEdit: ui.access.Allows(r, request, security.ActionCreateMigration)}
+	capabilities, err := databaseCapabilities(r.Context(), ui.migrations, request.DatabaseID)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, err)
+		return
+	}
+	view := MigrationListView{DatabaseID: request.DatabaseID, Migrations: page.Items, Page: page, CanEdit: ui.access.Allows(r, request, security.ActionCreateMigration), Capabilities: capabilities}
 	_ = ui.renderer.Render(w, r, http.StatusOK, "migration/list", Page{Title: "Migration", Content: view})
 }
 
@@ -251,7 +266,12 @@ func (ui *MigrationUI) newDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ui *MigrationUI) renderEditor(w http.ResponseWriter, r *http.Request, status int, databaseID security.ID, form MigrationForm) {
-	_ = ui.renderer.Render(w, r, status, "migration/editor", Page{Title: "Editor migration", Content: MigrationEditorView{DatabaseID: databaseID, Form: form}})
+	capabilities, err := databaseCapabilities(r.Context(), ui.migrations, databaseID)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, err)
+		return
+	}
+	_ = ui.renderer.Render(w, r, status, "migration/editor", Page{Title: "Editor migration", Content: MigrationEditorView{DatabaseID: databaseID, Form: form, Capabilities: capabilities}})
 }
 
 // SQL disimpan persis seperti yang diketik; spasi di awal/akhir hanya diabaikan untuk cek kosong
@@ -355,7 +375,16 @@ func (ui *MigrationUI) detail(w http.ResponseWriter, r *http.Request) {
 	}
 	// Riwayat yang sudah dieksekusi tidak pernah bisa diedit
 	editable := migration.Status == StatusDraft && ui.access.Allows(r, request, security.ActionUpdateMigration)
-	view := MigrationDetailView{DatabaseID: request.DatabaseID, Migration: migration, Editable: editable, Form: updateForm(request.DatabaseID, migration), CanPlan: editable && ui.plans != nil && ui.access.Allows(r, request, security.ActionAnalyzeMigration)}
+	capabilities, err := databaseCapabilities(r.Context(), ui.migrations, request.DatabaseID)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, err)
+		return
+	}
+	view := MigrationDetailView{
+		DatabaseID: request.DatabaseID, Migration: migration, Editable: editable,
+		Form: updateForm(request.DatabaseID, migration), Capabilities: capabilities,
+		CanPlan: editable && ui.plans != nil && capabilities.QueryPlans && ui.access.Allows(r, request, security.ActionAnalyzeMigration),
+	}
 	_ = ui.renderer.Render(w, r, http.StatusOK, "migration/detail", Page{Title: "Migration " + migration.Title, Content: view})
 }
 

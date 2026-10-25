@@ -75,7 +75,8 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, box *SecretBox, ids idSource,
 			if err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, "INSERT INTO managed_databases (id, name, dsn_ciphertext) VALUES ($1, $2, $3)", string(id), input.TargetName, sealed); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO managed_databases (id, name, engine, dsn_ciphertext)
+				VALUES ($1, $2, 'postgresql', $3)`, string(id), input.TargetName, sealed); err != nil {
 				return mapError(err)
 			}
 			databaseID = string(id)

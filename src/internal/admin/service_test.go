@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -18,11 +19,12 @@ const (
 var actor = security.Principal{UserID: actorID, SessionID: "5ed48df2-bcdd-4b52-b9ad-8d9f6689df55", AuthVersion: 1, CSRFEpoch: 1}
 
 type fakeRepository struct {
-	calls []string
-	user  User
-	hash  security.Secret
-	dsn   security.Secret
-	err   error
+	calls      []string
+	user       User
+	hash       security.Secret
+	connection Connection
+	dsn        security.Secret
+	err        error
 }
 
 func (r *fakeRepository) record(call string) error { r.calls = append(r.calls, call); return r.err }
@@ -50,8 +52,8 @@ func (r *fakeRepository) AddMember(context.Context, security.Principal, security
 func (r *fakeRepository) RemoveMember(context.Context, security.Principal, security.ID, security.ID) error {
 	return r.record("remove-member")
 }
-func (r *fakeRepository) CreateConnection(_ context.Context, _ security.Principal, _ Connection, dsn security.Secret) error {
-	r.dsn = dsn
+func (r *fakeRepository) CreateConnection(_ context.Context, _ security.Principal, connection Connection, dsn security.Secret) error {
+	r.connection, r.dsn = connection, dsn
 	return r.record("create-connection")
 }
 func (r *fakeRepository) SetGrant(context.Context, security.Principal, security.ID, security.ID, security.DatabaseAccess) error {
@@ -78,11 +80,17 @@ type fakeIDs struct{}
 
 func (fakeIDs) GenerateID() (security.ID, error) { return targetID, nil }
 
-type fakeChecker struct{ err error }
+type fakeChecker struct {
+	engine dbms.Engine
+	err    error
+}
 
-func (c fakeChecker) Check(context.Context, security.Secret) error { return c.err }
+func (c *fakeChecker) Check(_ context.Context, engine dbms.Engine, _ security.Secret) error {
+	c.engine = engine
+	return c.err
+}
 
-func newTestService(t *testing.T, repo *fakeRepository, authorizer fakeAuthorizer, checker fakeChecker) *Service {
+func newTestService(t *testing.T, repo *fakeRepository, authorizer fakeAuthorizer, checker *fakeChecker) *Service {
 	t.Helper()
 	service, err := NewService(Config{Repository: repo, Authorizer: authorizer, Passwords: fakeHasher{}, IDs: fakeIDs{}, Checker: checker})
 	if err != nil {
@@ -94,10 +102,10 @@ func newTestService(t *testing.T, repo *fakeRepository, authorizer fakeAuthorize
 func TestNewServiceRejectsMissingDependencies(t *testing.T) {
 	var nilRepo *fakeRepository
 	for _, cfg := range []Config{
-		{Repository: nilRepo, Authorizer: fakeAuthorizer{}, Passwords: fakeHasher{}, IDs: fakeIDs{}, Checker: fakeChecker{}},
-		{Repository: &fakeRepository{}, Passwords: fakeHasher{}, IDs: fakeIDs{}, Checker: fakeChecker{}},
-		{Repository: &fakeRepository{}, Authorizer: fakeAuthorizer{}, IDs: fakeIDs{}, Checker: fakeChecker{}},
-		{Repository: &fakeRepository{}, Authorizer: fakeAuthorizer{}, Passwords: fakeHasher{}, Checker: fakeChecker{}},
+		{Repository: nilRepo, Authorizer: fakeAuthorizer{}, Passwords: fakeHasher{}, IDs: fakeIDs{}, Checker: &fakeChecker{}},
+		{Repository: &fakeRepository{}, Passwords: fakeHasher{}, IDs: fakeIDs{}, Checker: &fakeChecker{}},
+		{Repository: &fakeRepository{}, Authorizer: fakeAuthorizer{}, IDs: fakeIDs{}, Checker: &fakeChecker{}},
+		{Repository: &fakeRepository{}, Authorizer: fakeAuthorizer{}, Passwords: fakeHasher{}, Checker: &fakeChecker{}},
 		{Repository: &fakeRepository{}, Authorizer: fakeAuthorizer{}, Passwords: fakeHasher{}, IDs: fakeIDs{}},
 	} {
 		if service, err := NewService(cfg); service != nil || !errors.Is(err, security.ErrInvalidInput) {
@@ -108,7 +116,7 @@ func TestNewServiceRejectsMissingDependencies(t *testing.T) {
 
 func TestEveryOperationRequiresPlatformAdmin(t *testing.T) {
 	repo := &fakeRepository{}
-	s := newTestService(t, repo, fakeAuthorizer{err: security.ErrForbidden}, fakeChecker{})
+	s := newTestService(t, repo, fakeAuthorizer{err: security.ErrForbidden}, &fakeChecker{})
 	ctx := context.Background()
 	for _, call := range []func() error{
 		func() error { _, err := s.Users(ctx, actor); return err },
@@ -122,7 +130,9 @@ func TestEveryOperationRequiresPlatformAdmin(t *testing.T) {
 		func() error { return s.CreateGroup(ctx, actor, "tim") },
 		func() error { return s.AddMember(ctx, actor, targetID, "siti") },
 		func() error { return s.RemoveMember(ctx, actor, targetID, targetID) },
-		func() error { return s.CreateConnection(ctx, actor, "toko", security.NewSecret("postgres://x")) },
+		func() error {
+			return s.CreateConnection(ctx, actor, dbms.PostgreSQL, "toko", security.NewSecret("postgres://x"))
+		},
 		func() error { return s.SetGrant(ctx, actor, targetID, targetID, security.AccessViewOnly) },
 		func() error { return s.RevokeGrant(ctx, actor, targetID, targetID) },
 	} {
@@ -137,7 +147,7 @@ func TestEveryOperationRequiresPlatformAdmin(t *testing.T) {
 
 func TestCreateUserNormalizesAndHashes(t *testing.T) {
 	repo := &fakeRepository{}
-	s := newTestService(t, repo, fakeAuthorizer{}, fakeChecker{})
+	s := newTestService(t, repo, fakeAuthorizer{}, &fakeChecker{})
 	if err := s.CreateUser(context.Background(), actor, NewUser{Username: "  Siti ", Password: security.NewSecret(password), PlatformAdmin: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +165,7 @@ func TestCreateUserNormalizesAndHashes(t *testing.T) {
 
 func TestAdminCannotDeactivateSelf(t *testing.T) {
 	repo := &fakeRepository{}
-	s := newTestService(t, repo, fakeAuthorizer{}, fakeChecker{})
+	s := newTestService(t, repo, fakeAuthorizer{}, &fakeChecker{})
 	if err := s.SetUserActive(context.Background(), actor, actorID, false); !errors.Is(err, security.ErrConflict) || len(repo.calls) != 0 {
 		t.Fatal("admin deactivated own account")
 	}
@@ -166,25 +176,33 @@ func TestAdminCannotDeactivateSelf(t *testing.T) {
 
 func TestCreateConnectionChecksReachabilityAndKeepsSecret(t *testing.T) {
 	repo := &fakeRepository{}
-	s := newTestService(t, repo, fakeAuthorizer{}, fakeChecker{err: errors.New("dial canary-secret")})
-	err := s.CreateConnection(context.Background(), actor, "toko", security.NewSecret("postgres://u:canary-secret@h/db"))
+	checker := &fakeChecker{err: errors.New("dial canary-secret")}
+	s := newTestService(t, repo, fakeAuthorizer{}, checker)
+	err := s.CreateConnection(context.Background(), actor, dbms.MySQL, "toko", security.NewSecret("u:canary-secret@tcp(h:3306)/db"))
 	if err == nil || strings.Contains(err.Error(), "canary") || len(repo.calls) != 0 {
 		t.Fatal("unreachable connection stored or error leaked")
 	}
-	s = newTestService(t, repo, fakeAuthorizer{}, fakeChecker{})
-	if err := s.CreateConnection(context.Background(), actor, " toko ", security.NewSecret("postgres://u:p@h/db")); err != nil || repo.dsn.Reveal() != "postgres://u:p@h/db" {
+	checker = &fakeChecker{}
+	s = newTestService(t, repo, fakeAuthorizer{}, checker)
+	if err := s.CreateConnection(context.Background(), actor, dbms.MySQL, " toko ", security.NewSecret("u:p@tcp(h:3306)/db")); err != nil || repo.dsn.Reveal() != "u:p@tcp(h:3306)/db" {
 		t.Fatal("valid connection rejected")
 	}
+	if checker.engine != dbms.MySQL || repo.connection.Engine != dbms.MySQL {
+		t.Fatal("database engine was not preserved")
+	}
 	for _, name := range []string{"", strings.Repeat("n", MaxNameRunes+1)} {
-		if err := s.CreateConnection(context.Background(), actor, name, security.NewSecret("postgres://x")); !errors.Is(err, security.ErrInvalidInput) {
+		if err := s.CreateConnection(context.Background(), actor, dbms.PostgreSQL, name, security.NewSecret("postgres://x")); !errors.Is(err, security.ErrInvalidInput) {
 			t.Fatal("invalid connection name accepted")
 		}
+	}
+	if err := s.CreateConnection(context.Background(), actor, dbms.Engine("oracle"), "x", security.NewSecret("dsn")); !errors.Is(err, security.ErrInvalidInput) {
+		t.Fatal("unsupported database engine accepted")
 	}
 }
 
 func TestInputValidationAndErrorSanitizing(t *testing.T) {
 	repo := &fakeRepository{err: errors.New("pq: duplicate key canary-secret")}
-	s := newTestService(t, repo, fakeAuthorizer{}, fakeChecker{})
+	s := newTestService(t, repo, fakeAuthorizer{}, &fakeChecker{})
 	ctx := context.Background()
 	if err := s.SetGrant(ctx, actor, targetID, targetID, security.AccessNone); !errors.Is(err, security.ErrInvalidInput) {
 		t.Fatal("invalid access level accepted")

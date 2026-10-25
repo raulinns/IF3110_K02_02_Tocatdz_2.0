@@ -1,0 +1,61 @@
+name: Database integration
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - ".github/workflows/database-integration.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - ".github/workflows/database-integration.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: tocatdz-test-root
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: tocatdz_test
+          MYSQL_ROOT_PASSWORD: tocatdz-test-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -ptocatdz-test-root --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=24
+
+    defaults:
+      run:
+        working-directory: src
+
+    env:
+      TEST_DATABASE_URL: postgres://postgres:tocatdz-test-root@127.0.0.1:5432/postgres?sslmode=disable
+      TEST_MYSQL_TARGET_DSN: root:tocatdz-test-root@tcp(127.0.0.1:3306)/tocatdz_test
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - run: go test ./... -count=1

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"unicode/utf8"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/schemadiff"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
@@ -32,6 +33,7 @@ type SchemaDiffView struct {
 	Validation   string
 	CanDraft     bool
 	Form         MigrationForm
+	Capabilities *dbms.Capabilities
 }
 
 type SchemaDiffStat struct {
@@ -48,7 +50,9 @@ func (v SchemaDiffView) Stats() []SchemaDiffStat {
 	}
 }
 
-func (v SchemaDiffView) Tabs() DatabaseTabs { return databaseTabs(v.DatabaseID, "diff") }
+func (v SchemaDiffView) Tabs() DatabaseTabs {
+	return databaseTabs(v.DatabaseID, "diff", v.Capabilities)
+}
 
 func (v SchemaDiffView) Action() string { return databasePath(v.DatabaseID, "schema-diff") }
 
@@ -82,6 +86,15 @@ func (ui *SchemaDiffUI) compare(w http.ResponseWriter, r *http.Request) {
 		_ = ui.renderer.RenderError(w, r, err)
 		return
 	}
+	capabilities, err := databaseCapabilities(r.Context(), ui.lister, request.DatabaseID)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, err)
+		return
+	}
+	if !capabilities.SchemaDiff {
+		_ = ui.renderer.RenderError(w, r, security.ErrNotFound)
+		return
+	}
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		_ = ui.renderer.RenderError(w, r, security.ErrInvalidInput)
@@ -98,13 +111,22 @@ func (ui *SchemaDiffUI) compare(w http.ResponseWriter, r *http.Request) {
 		_ = ui.renderer.RenderError(w, r, err)
 		return
 	}
-	view := SchemaDiffView{DatabaseID: request.DatabaseID, Databases: databases, Schema: defaultDiffSchema, SourceSchema: defaultDiffSchema}
+	view := SchemaDiffView{DatabaseID: request.DatabaseID, Schema: defaultDiffSchema, SourceSchema: defaultDiffSchema, Capabilities: capabilities}
 	names := map[security.ID]string{}
 	for _, database := range databases {
 		if !database.valid() {
 			_ = ui.renderer.RenderError(w, r, security.ErrUnavailable)
 			return
 		}
+		databaseFeatures, err := databaseCapabilities(r.Context(), ui.lister, database.ID)
+		if err != nil {
+			_ = ui.renderer.RenderError(w, r, err)
+			return
+		}
+		if !databaseFeatures.SchemaDiff {
+			continue
+		}
+		view.Databases = append(view.Databases, database)
 		names[database.ID] = database.Name
 		if view.Source == "" && database.ID != request.DatabaseID {
 			view.Source = database.ID

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
@@ -10,12 +11,21 @@ import (
 type MigrationAdapter struct{ service migration.Application }
 
 var _ MigrationService = (*MigrationAdapter)(nil)
+var _ dbms.CapabilityResolver = (*MigrationAdapter)(nil)
 
 func NewMigrationAdapter(service migration.Application) (*MigrationAdapter, error) {
 	if missingDependency(service) {
 		return nil, security.ErrInvalidInput
 	}
 	return &MigrationAdapter{service: service}, nil
+}
+
+func (a *MigrationAdapter) Capabilities(ctx context.Context, id security.ID) (dbms.Capabilities, error) {
+	resolver, ok := a.service.(dbms.CapabilityResolver)
+	if !ok {
+		return dbms.Features(dbms.PostgreSQL), nil
+	}
+	return resolver.Capabilities(ctx, id)
 }
 func migrationRequest(request DatabaseRequest) migration.Request {
 	return migration.Request{Principal: request.Principal, DatabaseID: request.DatabaseID}

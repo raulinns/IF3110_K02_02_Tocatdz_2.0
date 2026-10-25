@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -30,8 +31,9 @@ type Group struct {
 
 // DSN koneksi tidak pernah ikut dikembalikan dari repository.
 type Connection struct {
-	ID   security.ID
-	Name string
+	ID     security.ID
+	Name   string
+	Engine dbms.Engine
 }
 
 type Grant struct {
@@ -71,7 +73,7 @@ type Authorizer interface {
 
 // ConnectionChecker memastikan DSN bisa dihubungi sebelum disimpan.
 type ConnectionChecker interface {
-	Check(context.Context, security.Secret) error
+	Check(context.Context, dbms.Engine, security.Secret) error
 }
 
 type IDs interface{ GenerateID() (security.ID, error) }
@@ -251,22 +253,26 @@ func (s *Service) RemoveMember(ctx context.Context, actor security.Principal, gr
 	return safeError(s.deps.Repository.RemoveMember(ctx, actor, groupID, userID))
 }
 
-func (s *Service) CreateConnection(ctx context.Context, actor security.Principal, name string, dsn security.Secret) error {
+func (s *Service) CreateConnection(ctx context.Context, actor security.Principal, engine dbms.Engine, name string, dsn security.Secret) error {
 	if err := s.require(ctx, actor); err != nil {
 		return err
+	}
+	engine, err := dbms.ParseEngine(string(engine))
+	if err != nil {
+		return security.ErrInvalidInput
 	}
 	name, ok := validName(name)
 	if !ok || dsn.Empty() || len(dsn.Reveal()) > MaxDSNBytes || !utf8.ValidString(dsn.Reveal()) {
 		return security.ErrInvalidInput
 	}
-	if err := s.deps.Checker.Check(ctx, dsn); err != nil {
+	if err := s.deps.Checker.Check(ctx, engine, dsn); err != nil {
 		return safeError(err)
 	}
 	id, err := s.newID()
 	if err != nil {
 		return err
 	}
-	return safeError(s.deps.Repository.CreateConnection(ctx, actor, Connection{ID: id, Name: name}, dsn))
+	return safeError(s.deps.Repository.CreateConnection(ctx, actor, Connection{ID: id, Name: name, Engine: engine}, dsn))
 }
 
 func (s *Service) SetGrant(ctx context.Context, actor security.Principal, groupID, databaseID security.ID, access security.DatabaseAccess) error {

@@ -167,15 +167,16 @@ a {
 #sidebar .sidebar-header {
 	display: flex;
 	align-items: center;
-	padding: 0 1rem;
-	min-height: 54px;
+	justify-content: center;
+	padding: .75rem 1rem;
+	min-height: 120px;
 	border-bottom: 1px solid var(--border);
 }
 
 #sidebar .app-logo {
 	display: block;
-	max-height: 36px;
-	width: auto;
+	width: 96px;
+	height: auto;
 }
 
 #sidebar ul.components {
@@ -874,8 +875,9 @@ a {
 
 .auth-content .brand {
 	display: inline-block;
-	max-height: 40px;
-	width: auto;
+	width: 180px;
+	max-width: 55vw;
+	height: auto;
 }
 
 .auth-footer {

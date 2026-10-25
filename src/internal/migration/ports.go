@@ -29,6 +29,11 @@ type Validator interface {
 	Validate(context.Context, security.Secret) error
 }
 
+// DatabaseValidator dipakai saat aturan sintaks bergantung pada DBMS target.
+type DatabaseValidator interface {
+	ValidateDatabase(context.Context, security.ID, security.Secret) error
+}
+
 // Lock harus lintas proses, memakai identitas target yang sama untuk alias koneksi, dan menunggu sampai callback selesai.
 type Coordinator interface {
 	WithDatabaseLock(context.Context, security.ID, func(context.Context, LockedTarget) error) error
@@ -37,6 +42,13 @@ type LockedTarget interface {
 	Begin(context.Context) (Transaction, error)
 	LookupReceipt(context.Context, ExecutionKey) (ReceiptLookup, error)
 }
+
+// JournaledTarget persists an execution intent outside the migration
+// transaction. It is required by DBMSs whose DDL can implicitly commit.
+type JournaledTarget interface {
+	StartReceipt(context.Context, Receipt) error
+}
+
 type Transaction interface {
 	Execute(context.Context, security.Secret) error
 	WriteReceipt(context.Context, Receipt) error

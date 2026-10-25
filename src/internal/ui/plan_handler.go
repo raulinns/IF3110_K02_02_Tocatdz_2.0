@@ -65,6 +65,15 @@ func (ui *MigrationUI) plan(w http.ResponseWriter, r *http.Request) {
 		_ = ui.renderer.RenderError(w, r, err)
 		return
 	}
+	capabilities, err := databaseCapabilities(r.Context(), ui.migrations, req.DatabaseID)
+	if err != nil {
+		_ = ui.renderer.RenderError(w, r, err)
+		return
+	}
+	if !capabilities.QueryPlans {
+		_ = ui.renderer.RenderError(w, r, security.ErrNotFound)
+		return
+	}
 	id, err := pathID(r, "migrationID")
 	if err != nil {
 		_ = ui.renderer.RenderError(w, r, err)

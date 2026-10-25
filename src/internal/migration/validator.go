@@ -19,7 +19,7 @@ func (SQLRejection) Unwrap() error { return security.ErrInvalidInput }
 func (reason SQLRejection) Message() string {
 	switch reason {
 	case "syntax":
-		return "SQL tidak valid. Periksa sintaks PostgreSQL."
+		return "SQL tidak valid. Periksa sintaks DBMS target."
 	case "transaction":
 		return "Perintah transaksi diatur oleh aplikasi."
 	case "concurrent":
