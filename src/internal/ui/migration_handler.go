@@ -154,6 +154,7 @@ type MigrationDetailView struct {
 	Migration  MigrationDetail
 	Editable   bool
 	Form       MigrationForm
+	CanPlan    bool
 }
 
 func (v MigrationDetailView) Tabs() DatabaseTabs { return databaseTabs(v.DatabaseID, "migrations") }
@@ -162,11 +163,16 @@ func (v MigrationDetailView) ExecuteAction() string {
 	return databasePath(v.DatabaseID, "migrations", string(v.Migration.ID), "execute")
 }
 
+func (v MigrationDetailView) PlanAction() string {
+	return databasePath(v.DatabaseID, "migrations", string(v.Migration.ID), "plan")
+}
+
 type MigrationUI struct {
 	migrations MigrationService
 	guard      security.Middleware
 	access     *DatabaseGuard
 	renderer   *Renderer
+	plans      MigrationPlanService
 }
 
 var _ security.RouteRegistrar = (*MigrationUI)(nil)
@@ -177,7 +183,11 @@ func NewMigrationUI(migrations MigrationService, guard security.Middleware, acce
 			return nil, security.ErrInvalidInput
 		}
 	}
-	return &MigrationUI{migrations: migrations, guard: guard, access: access, renderer: renderer}, nil
+	ui := &MigrationUI{migrations: migrations, guard: guard, access: access, renderer: renderer}
+	if plans, ok := migrations.(MigrationPlanService); ok && plans.SupportsPlans() {
+		ui.plans = plans
+	}
+	return ui, nil
 }
 
 func (ui *MigrationUI) RegisterRoutes(mux *http.ServeMux) {
@@ -187,6 +197,9 @@ func (ui *MigrationUI) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /databases/{databaseID}/migrations/{migrationID}", ui.guard.Protected(http.HandlerFunc(ui.detail)))
 	mux.Handle("POST /databases/{databaseID}/migrations/{migrationID}", ui.guard.Protected(http.HandlerFunc(ui.update)))
 	mux.Handle("POST /databases/{databaseID}/migrations/{migrationID}/execute", ui.guard.Protected(http.HandlerFunc(ui.execute)))
+	if ui.plans != nil {
+		mux.Handle("POST /databases/{databaseID}/migrations/{migrationID}/plan", ui.guard.Protected(http.HandlerFunc(ui.plan)))
+	}
 }
 
 func (ui *MigrationUI) history(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +355,7 @@ func (ui *MigrationUI) detail(w http.ResponseWriter, r *http.Request) {
 	}
 	// Riwayat yang sudah dieksekusi tidak pernah bisa diedit
 	editable := migration.Status == StatusDraft && ui.access.Allows(r, request, security.ActionUpdateMigration)
-	view := MigrationDetailView{DatabaseID: request.DatabaseID, Migration: migration, Editable: editable, Form: updateForm(request.DatabaseID, migration)}
+	view := MigrationDetailView{DatabaseID: request.DatabaseID, Migration: migration, Editable: editable, Form: updateForm(request.DatabaseID, migration), CanPlan: editable && ui.plans != nil && ui.access.Allows(r, request, security.ActionAnalyzeMigration)}
 	_ = ui.renderer.Render(w, r, http.StatusOK, "migration/detail", Page{Title: "Migration " + migration.Title, Content: view})
 }
 
