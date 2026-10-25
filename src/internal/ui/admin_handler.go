@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -30,8 +31,16 @@ type AdminGroup struct {
 
 // DSN tidak pernah dikirim balik ke UI setelah disimpan
 type AdminConnection struct {
-	ID   security.ID
-	Name string
+	ID     security.ID
+	Name   string
+	Engine dbms.Engine
+}
+
+func (c AdminConnection) EngineLabel() string {
+	if c.Engine == dbms.MySQL {
+		return "MySQL"
+	}
+	return "PostgreSQL"
 }
 
 type AdminGrant struct {
@@ -53,8 +62,9 @@ type NewUser struct {
 }
 
 type NewConnection struct {
-	Name string
-	DSN  security.Secret
+	Name   string
+	Engine dbms.Engine
+	DSN    security.Secret
 }
 
 // Setiap implementasi wajib memanggil RequirePlatformAdmin sendiri dan menjalankan efek samping keamanan secara atomik
@@ -174,7 +184,7 @@ func (ui *AdminUI) RegisterRoutes(mux *http.ServeMux) {
 	handle("POST /admin/groups/{groupID}/members", ui.mutate(groups, ui.addMember, "username"))
 	handle("POST /admin/groups/{groupID}/members/{userID}/remove", ui.mutate(groups, ui.removeMember))
 	handle("GET /admin/connections", ui.show(connections))
-	handle("POST /admin/connections", ui.mutate(connections, ui.createConnection, "name", "dsn"))
+	handle("POST /admin/connections", ui.mutate(connections, ui.createConnection, "engine", "name", "dsn"))
 	handle("GET /admin/grants", ui.show(grants))
 	handle("POST /admin/grants", ui.mutate(grants, ui.setGrant, "group_id", "database_id", "access"))
 	handle("POST /admin/grants/revoke", ui.mutate(grants, ui.revokeGrant, "group_id", "database_id"))
@@ -303,12 +313,16 @@ func (ui *AdminUI) removeMember(r *http.Request, principal security.Principal, _
 }
 
 func (ui *AdminUI) createConnection(r *http.Request, principal security.Principal, values url.Values) error {
+	engine, err := dbms.ParseEngine(values.Get("engine"))
+	if err != nil {
+		return security.ErrInvalidInput
+	}
 	name, ok := formText(values, "name", maxConnectionNameRunes)
 	dsn := values.Get("dsn")
 	if !ok || dsn == "" || len(dsn) > maxConnectionDSNBytes {
 		return security.ErrInvalidInput
 	}
-	return ui.services.Connections.CreateConnection(r.Context(), principal, NewConnection{Name: name, DSN: security.NewSecret(dsn)})
+	return ui.services.Connections.CreateConnection(r.Context(), principal, NewConnection{Name: name, Engine: engine, DSN: security.NewSecret(dsn)})
 }
 
 func formAccess(values url.Values) (security.DatabaseAccess, error) {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -68,7 +69,7 @@ func (a *fakeAdmin) RemoveMember(_ context.Context, p security.Principal, groupI
 }
 
 func (a *fakeAdmin) Connections(_ context.Context, p security.Principal) ([]AdminConnection, error) {
-	return []AdminConnection{{ID: testDatabaseA, Name: "inventaris"}}, a.record("connections", p)
+	return []AdminConnection{{ID: testDatabaseA, Name: "inventaris", Engine: dbms.MySQL}}, a.record("connections", p)
 }
 
 func (a *fakeAdmin) CreateConnection(_ context.Context, p security.Principal, connection NewConnection) error {
@@ -128,7 +129,7 @@ func adminRoutes() []struct {
 		{"POST", memberPath, url.Values{"username": {"siti"}}},
 		{"POST", memberPath + "/" + string(testUserID) + "/remove", url.Values{}},
 		{"GET", "/admin/connections", nil},
-		{"POST", "/admin/connections", url.Values{"name": {"x"}, "dsn": {"postgres://u:p@h/db"}}},
+		{"POST", "/admin/connections", url.Values{"engine": {"postgresql"}, "name": {"x"}, "dsn": {"postgres://u:p@h/db"}}},
 		{"GET", "/admin/grants", nil},
 		{"POST", "/admin/grants", url.Values{"group_id": {string(testGroupID)}, "database_id": {string(testDatabaseA)}, "access": {"view_only"}}},
 		{"POST", "/admin/grants/revoke", url.Values{"group_id": {string(testGroupID)}, "database_id": {string(testDatabaseA)}}},
@@ -188,7 +189,7 @@ func TestAdminPagesRenderData(t *testing.T) {
 	}{
 		{"/admin/users", []string{"budi", "Nonaktifkan", "/admin/users/" + string(testUserID) + "/active"}},
 		{"/admin/groups", []string{"tim-data", "budi", memberPath + "/" + string(testUserID) + "/remove"}},
-		{"/admin/connections", []string{"inventaris", "tidak akan ditampilkan lagi"}},
+		{"/admin/connections", []string{"inventaris", "MySQL", "tidak akan ditampilkan lagi"}},
 		{"/admin/grants", []string{"tim-data", "inventaris", "Lihat &#43; ubah", `value="` + string(testGroupID) + `"`}},
 	} {
 		w := serve(testAdminUI(t, &fakeAdmin{}, &fakeAuthorizer{}), formRequest("GET", scenario.target, nil))
@@ -216,8 +217,8 @@ func TestCreateUserNormalizesUsernameAndHidesPassword(t *testing.T) {
 func TestCreateConnectionKeepsDSNSecret(t *testing.T) {
 	dsn := "postgres://admin:canary-secret@db:5432/app"
 	admin := &fakeAdmin{err: security.ErrConflict}
-	w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), formRequest("POST", "/admin/connections", url.Values{"name": {"app"}, "dsn": {dsn}}))
-	if admin.conn.DSN.Reveal() != dsn || admin.conn.Name != "app" {
+	w := serve(testAdminUI(t, admin, &fakeAuthorizer{}), formRequest("POST", "/admin/connections", url.Values{"engine": {"mysql"}, "name": {"app"}, "dsn": {dsn}}))
+	if admin.conn.DSN.Reveal() != dsn || admin.conn.Name != "app" || admin.conn.Engine != dbms.MySQL {
 		t.Fatal("connection not passed to service")
 	}
 	if w.Code != http.StatusConflict || strings.Contains(w.Body.String(), "canary-secret") {
@@ -238,6 +239,7 @@ func TestAdminFormsValidateBeforeCallingService(t *testing.T) {
 		{"/admin/groups", url.Values{"name": {strings.Repeat("g", 65)}}},
 		{memberPath, url.Values{"username": {"bad name"}}},
 		{"/admin/connections", url.Values{"name": {"x"}, "dsn": {""}}},
+		{"/admin/connections", url.Values{"engine": {"oracle"}, "name": {"x"}, "dsn": {"dsn"}}},
 		{"/admin/grants", url.Values{"group_id": {string(testGroupID)}, "database_id": {string(testDatabaseA)}, "access": {"none"}}},
 		{"/admin/grants", url.Values{"group_id": {"x"}, "database_id": {string(testDatabaseA)}, "access": {"view_only"}}},
 		{"/admin/grants", url.Values{"group_id": {string(testGroupID)}, "database_id": {string(testDatabaseA)}, "access": {"view_only"}, "user_id": {string(testUserID)}}},

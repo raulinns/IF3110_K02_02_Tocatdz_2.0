@@ -13,9 +13,11 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/config"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
+	mysqltarget "github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/mysql"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/postgres"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/schemadiff"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/targetdb"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/ui"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/web"
 )
@@ -24,7 +26,7 @@ import (
 type Platform struct {
 	Handler http.Handler
 	worker  *migration.ReconcileWorker
-	targets *postgres.Targets
+	targets *targetdb.Router
 	pool    *pgxpool.Pool
 }
 
@@ -95,8 +97,19 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 	if err != nil {
 		return err
 	}
-	p.targets, err = postgres.NewTargets(p.pool, box)
+	postgresTargets, err := postgres.NewTargets(p.pool, box)
 	if err != nil {
+		return err
+	}
+	mysqlTargets, err := mysqltarget.NewTargets(p.pool, box)
+	if err != nil {
+		postgresTargets.Close()
+		return err
+	}
+	p.targets, err = targetdb.NewRouter(p.pool, postgresTargets, mysqlTargets)
+	if err != nil {
+		mysqlTargets.Close()
+		postgresTargets.Close()
 		return err
 	}
 	viewer, err := explorer.NewService(explorer.Config{Directory: store, Reader: p.targets, Authorizer: authorizer})
@@ -107,7 +120,11 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 	if err != nil {
 		return err
 	}
-	validator := migration.NewPostgreSQLValidator()
+	postgresValidator := migration.NewPostgreSQLValidator()
+	validator, err := targetdb.NewMigrationValidator(p.pool, postgresValidator, migration.NewMySQLValidator())
+	if err != nil {
+		return err
+	}
 	migrations, err := migration.NewService(migration.Config{
 		Repository: ledger, Coordinator: p.targets, Validator: validator,
 		Authorizer: authorizer, Accounts: store, IDs: tokens, Clock: clock,
@@ -123,7 +140,7 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 	if err != nil {
 		return err
 	}
-	diff, err := schemadiff.NewService(schemadiff.Config{Reader: p.targets, Validator: validator, Authorizer: authorizer})
+	diff, err := schemadiff.NewService(schemadiff.Config{Reader: p.targets, Validator: postgresValidator, Authorizer: authorizer})
 	if err != nil {
 		return err
 	}

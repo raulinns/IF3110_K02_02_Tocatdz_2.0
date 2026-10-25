@@ -70,15 +70,15 @@ func TestAdminWorkflowIntegratesUIAndPostgreSQL(t *testing.T) {
 	post("/admin/users/"+user+"/active", url.Values{"active": {"true"}}, http.StatusSeeOther)
 	e.login(t, "tester", "password tester cukup panjang")
 	post("/admin/grants/revoke", url.Values{"group_id": {group}, "database_id": {database}}, http.StatusSeeOther)
-	post("/admin/connections", url.Values{"name": {"unreachable"}, "dsn": {"postgres://nobody:canary-password@127.0.0.1:1/none?connect_timeout=1"}}, http.StatusBadRequest)
+	post("/admin/connections", url.Values{"engine": {"postgresql"}, "name": {"unreachable"}, "dsn": {"postgres://nobody:canary-password@127.0.0.1:1/none?connect_timeout=1"}}, http.StatusBadRequest)
 	box, _ := postgres.NewSecretBox(key(3))
 	adminDSN := security.NewSecret(createDatabase(t))
-	post("/admin/connections", url.Values{"name": {"unsafe"}, "dsn": {adminDSN.Reveal()}}, http.StatusBadRequest)
+	post("/admin/connections", url.Values{"engine": {"postgresql"}, "name": {"unsafe"}, "dsn": {adminDSN.Reveal()}}, http.StatusBadRequest)
 	dsn, err := postgres.PrepareManagedTarget(ctx, e.platform.pool, adminDSN, box)
 	if err != nil {
 		t.Fatal(err)
 	}
-	post("/admin/connections", url.Values{"name": {"second-target"}, "dsn": {dsn.Reveal()}}, http.StatusSeeOther)
+	post("/admin/connections", url.Values{"engine": {"postgresql"}, "name": {"second-target"}, "dsn": {dsn.Reveal()}}, http.StatusSeeOther)
 	w := e.do("GET", "/admin/connections", nil, cookie)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "second-target") || strings.Contains(w.Body.String(), dsn.Reveal()) || strings.Contains(w.Body.String(), "canary-password") {
 		t.Fatal("connection UI missing data or disclosing credentials")

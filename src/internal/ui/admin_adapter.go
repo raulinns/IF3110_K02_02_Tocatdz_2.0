@@ -84,13 +84,13 @@ func (a *AdminAdapter) Connections(ctx context.Context, principal security.Princ
 	}
 	result := make([]AdminConnection, 0, len(connections))
 	for _, connection := range connections {
-		result = append(result, AdminConnection{ID: connection.ID, Name: connection.Name})
+		result = append(result, AdminConnection{ID: connection.ID, Name: connection.Name, Engine: connection.Engine})
 	}
 	return result, nil
 }
 
 func (a *AdminAdapter) CreateConnection(ctx context.Context, principal security.Principal, connection NewConnection) error {
-	return a.service.CreateConnection(ctx, principal, connection.Name, connection.DSN)
+	return a.service.CreateConnection(ctx, principal, connection.Engine, connection.Name, connection.DSN)
 }
 
 func (a *AdminAdapter) Grants(ctx context.Context, principal security.Principal) ([]AdminGrant, error) {

@@ -28,6 +28,16 @@ func TestParseEngineNormalizesSupportedValues(t *testing.T) {
 			raw:  "POSTGRESQL",
 			want: PostgreSQL,
 		},
+		{
+			name: "canonical MySQL",
+			raw:  "mysql",
+			want: MySQL,
+		},
+		{
+			name: "MySQL with whitespace and different casing",
+			raw:  "  MySQL  ",
+			want: MySQL,
+		},
 	}
 
 	for _, tt := range tests {
@@ -83,10 +93,6 @@ func TestParseEngineRejectsUnsupportedValues(t *testing.T) {
 			raw:  "oracle",
 		},
 		{
-			name: "MySQL is not supported",
-			raw:  "mysql",
-		},
-		{
 			name: "PostgreSQL DSN is not an engine name",
 			raw:  "postgresql://user:secret@localhost/database",
 		},
@@ -118,5 +124,14 @@ func TestParseEngineRejectsUnsupportedValues(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestFeaturesAreScopedPerEngine(t *testing.T) {
+	if got := Features(PostgreSQL); !got.QueryPlans || !got.SchemaDiff {
+		t.Fatalf("PostgreSQL capabilities = %+v", got)
+	}
+	if got := Features(MySQL); got.QueryPlans || got.SchemaDiff {
+		t.Fatalf("MySQL exposed PostgreSQL-only capabilities: %+v", got)
 	}
 }

@@ -11,12 +11,12 @@
 			<div class="box-body">
 				<div class="table-responsive">
 					<table class="table table-hover">
-						<thead><tr><th scope="col">Nama</th><th scope="col">ID</th></tr></thead>
+						<thead><tr><th scope="col">Nama</th><th scope="col">DBMS</th><th scope="col">ID</th></tr></thead>
 						<tbody>
 							{{range .Data}}
-							<tr><td class="mono"><i class="fas fa-database text-muted" aria-hidden="true"></i> {{.Name}}</td><td class="mono text-muted small">{{.ID}}</td></tr>
+							<tr><td class="mono"><i class="fas fa-database text-muted" aria-hidden="true"></i> {{.Name}}</td><td>{{.EngineLabel}}</td><td class="mono text-muted small">{{.ID}}</td></tr>
 							{{else}}
-							<tr><td colspan="2" class="text-muted">Belum ada koneksi.</td></tr>
+							<tr><td colspan="3" class="text-muted">Belum ada koneksi.</td></tr>
 							{{end}}
 						</tbody>
 					</table>
@@ -26,17 +26,24 @@
 	</div>
 	<div class="col-xl-5">
 		<div class="card mb-0">
-			<div class="card-header"><i class="fas fa-plug text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Tambah koneksi PostgreSQL</h2></div>
+			<div class="card-header"><i class="fas fa-plug text-muted" aria-hidden="true"></i><h2 class="h6 mb-0">Tambah koneksi database</h2></div>
 			<div class="card-body">
 				<form method="post" action="/admin/connections">
 					<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+					<div class="mb-3">
+						<label for="connection-engine" class="form-label">DBMS</label>
+						<select id="connection-engine" name="engine" class="form-select" required>
+							<option value="postgresql">PostgreSQL</option>
+							<option value="mysql">MySQL</option>
+						</select>
+					</div>
 					<div class="mb-3">
 						<label for="connection-name" class="form-label">Nama tampilan</label>
 						<input id="connection-name" name="name" type="text" class="form-control" maxlength="64" required>
 					</div>
 					<div class="mb-3">
 						<label for="connection-dsn" class="form-label">Connection string</label>
-						<input id="connection-dsn" name="dsn" type="password" class="form-control" autocomplete="off" spellcheck="false" placeholder="postgres://user:password@host:5432/dbname" required>
+						<input id="connection-dsn" name="dsn" type="password" class="form-control" autocomplete="off" spellcheck="false" placeholder="Connection string PostgreSQL atau MySQL" required>
 						<div class="form-text"><i class="fas fa-lock" aria-hidden="true"></i> Connection string disimpan terenkripsi dan tidak akan ditampilkan lagi.</div>
 					</div>
 					<button type="submit" class="btn btn-primary w-100"><i class="fas fa-floppy-disk" aria-hidden="true"></i>Simpan koneksi</button>

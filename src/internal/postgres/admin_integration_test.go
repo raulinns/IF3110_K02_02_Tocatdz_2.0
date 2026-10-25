@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/admin"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -53,7 +54,7 @@ func newAdminFixture(t *testing.T) *adminFixture {
 	if err := store.CreateGroup(ctx, f.actor, admin.Group{ID: f.group, Name: "pengembang"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateConnection(ctx, f.actor, admin.Connection{ID: f.db, Name: "toko"}, security.NewSecret("postgres://u:canary-secret@h/db")); err != nil {
+	if err := store.CreateConnection(ctx, f.actor, admin.Connection{ID: f.db, Name: "toko", Engine: dbms.MySQL}, security.NewSecret("u:canary-secret@tcp(h:3306)/db")); err != nil {
 		t.Fatal(err)
 	}
 	return f
@@ -65,11 +66,11 @@ func TestAdminCreatesStoreEncryptedConnection(t *testing.T) {
 	if err := f.pool.QueryRow(context.Background(), "SELECT dsn_ciphertext FROM managed_databases WHERE id = $1", string(f.db)).Scan(&sealed); err != nil {
 		t.Fatal(err)
 	}
-	if len(sealed) == 0 || string(sealed) == "postgres://u:canary-secret@h/db" {
+	if len(sealed) == 0 || string(sealed) == "u:canary-secret@tcp(h:3306)/db" {
 		t.Fatal("connection string stored in plaintext")
 	}
 	connections, err := f.store.Connections(context.Background())
-	if err != nil || len(connections) != 1 || connections[0].Name != "toko" {
+	if err != nil || len(connections) != 1 || connections[0].Name != "toko" || connections[0].Engine != dbms.MySQL {
 		t.Fatal("connection not listed")
 	}
 }
