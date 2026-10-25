@@ -2,26 +2,19 @@
 * Tocatdz — gaya aplikasi
 * Tata letak dan komponen diadaptasi dari Bootstrap Simple Admin Template
 * (c) Alexis Luna / Pro Dev Ph, Apache License 2.0 — lihat /static/vendor/bootstrap-simple-admin-template/LICENSE
-* Font IBM Plex Mono di-host sendiri (CSP melarang CDN); lisensi di /static/fonts/OFL.txt
+* Font Lato dari template yang sama di-host sendiri (CSP melarang CDN); lisensi di /static/fonts/OFL.txt
+* Kode dan SQL memakai font monospace bawaan sistem
 -------------------------------------------------------------------*/
 
 /*------------------------------------------------------------------
 [1. Font]
 */
 @font-face {
-	font-family: "IBM Plex Mono";
+	font-family: "Lato";
 	font-style: normal;
 	font-weight: 400;
 	font-display: swap;
-	src: url("/static/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
-}
-
-@font-face {
-	font-family: "IBM Plex Mono";
-	font-style: normal;
-	font-weight: 600;
-	font-display: swap;
-	src: url("/static/fonts/ibm-plex-mono-latin-600-normal.woff2") format("woff2");
+	src: url("/static/fonts/Lato-Regular.woff") format("woff");
 }
 
 /*------------------------------------------------------------------
@@ -31,8 +24,8 @@ untuk mode terang dan gelap. Variabel Bootstrap diarahkan ke variabel ini.
 */
 :root,
 [data-bs-theme="light"] {
-	--font-sans: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
-	--font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+	--font-sans: "Lato", "Helvetica Neue", Arial, Helvetica, sans-serif;
+	--font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
 	--bg: #f3f3f5;
 	--surface: #ffffff;
 	--field: #fafafa;
@@ -61,7 +54,7 @@ untuk mode terang dan gelap. Variabel Bootstrap diarahkan ke variabel ini.
 
 	--bs-body-font-family: var(--font-sans);
 	--bs-font-monospace: var(--font-mono);
-	--bs-body-font-size: 0.875rem;
+	--bs-body-font-size: 1rem;
 	--bs-body-bg: var(--bg);
 	--bs-body-color: var(--text);
 	--bs-secondary-color: var(--text-muted);
@@ -125,7 +118,7 @@ body {
 h1, h2, h3, h4, h5, h6,
 .h1, .h2, .h3, .h4, .h5, .h6 {
 	font-family: var(--font-sans);
-	font-weight: 600;
+	font-weight: 400;
 	color: var(--text);
 }
 
@@ -136,6 +129,7 @@ a {
 
 .mono {
 	font-family: var(--font-mono);
+	font-size: .9em;
 }
 
 :focus-visible {
@@ -193,9 +187,9 @@ a {
 	display: flex;
 	align-items: center;
 	gap: .6rem;
-	padding: .75rem 1.5rem;
+	padding: .8rem 1.5rem;
 	color: var(--text);
-	font-size: .875rem;
+	font-size: 1rem;
 }
 
 #sidebar ul li a .fas {
@@ -346,10 +340,9 @@ a {
 	display: flex;
 	align-items: center;
 	gap: .5rem;
-	padding: .9rem 1.25rem;
+	padding: 15px 20px;
 	background: var(--surface);
 	border-bottom: 1px solid var(--border);
-	font-weight: 600;
 }
 
 .card-header .card-header-meta {
@@ -467,7 +460,6 @@ a {
 */
 .btn {
 	font-family: var(--font-sans);
-	font-size: .8125rem;
 	border-radius: 4px;
 }
 
@@ -608,7 +600,6 @@ a {
 .form-control,
 .form-select {
 	font-family: var(--font-sans);
-	font-size: .875rem;
 	color: var(--text);
 	background-color: var(--field);
 	border: 2px solid var(--border-strong);
@@ -746,6 +737,114 @@ a {
 	margin-top: 1rem;
 	color: var(--text-muted);
 	font-size: .8125rem;
+}
+
+/*------------------------------------------------------------------
+[11b. Kartu ringkasan (dashboard template), schema diff, dan execution plan]
+*/
+.card .content {
+	padding: 15px 15px 10px;
+}
+
+.card .content .icon-big {
+	font-size: 3em;
+	min-height: 64px;
+	line-height: 64px;
+}
+
+.card .content .number {
+	display: block;
+	font-size: 1.5em;
+	text-align: right;
+	font-weight: bolder;
+}
+
+.card .content .footer {
+	padding: 0;
+	line-height: 30px;
+}
+
+.card .content .stats {
+	display: inline-block;
+	color: var(--text-muted);
+}
+
+.detail-subtitle {
+	margin-bottom: 0;
+	font-size: .8rem;
+	text-transform: uppercase;
+	line-height: 1.6;
+	text-align: right;
+	color: var(--text-muted);
+}
+
+.teal {
+	color: #00b5ad !important;
+}
+
+.olive {
+	color: #b5cc18 !important;
+}
+
+.orange {
+	color: #f2711c !important;
+}
+
+.grey {
+	color: #767676 !important;
+}
+
+.text-danger-soft {
+	color: var(--danger) !important;
+}
+
+.diff-add {
+	color: #fff;
+	background: var(--success);
+}
+
+.diff-drop {
+	color: #fff;
+	background: var(--danger);
+}
+
+.diff-alter {
+	color: #3b2a12;
+	background: var(--warning);
+}
+
+.diff-cell {
+	min-width: 12rem;
+	max-width: 28rem;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.table-plan td {
+	white-space: nowrap;
+}
+
+.plan-node {
+	margin: 0;
+	padding: 0;
+	font-size: inherit;
+	color: inherit;
+	background: none;
+	overflow: visible;
+}
+
+.plan-json > summary {
+	cursor: pointer;
+	list-style: none;
+	border-bottom: 0;
+}
+
+.plan-json > summary::-webkit-details-marker {
+	display: none;
+}
+
+.plan-json[open] > summary {
+	border-bottom: 1px solid var(--border);
 }
 
 /*------------------------------------------------------------------
