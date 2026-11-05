@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 
-// Bentuk mengikuti GET /api/v1/auth/me di TASK.md (K1); disesuaikan setelah openapi.yaml dibekukan.
+// Respons GET /api/v1/auth/me.
 export interface Session {
   user: { id: string; username: string }
   platform_admin: boolean
@@ -10,7 +10,7 @@ export interface Session {
 
 export type SessionState =
   | { status: 'loading' }
-  | { status: 'error'; retry: () => void }
+  | { status: 'error'; error: unknown; retry: () => void }
   | { status: 'anonymous' }
   | { status: 'authenticated'; session: Session; logout: () => Promise<void> }
 
