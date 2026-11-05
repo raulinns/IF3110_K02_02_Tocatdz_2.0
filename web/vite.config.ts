@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 // Dev: proxy /api ke backend Go. Jalankan backend dengan PUBLIC_ORIGIN=http://localhost:5173
@@ -11,5 +11,8 @@ export default defineConfig({
       '/api': { target: 'http://localhost:8080', changeOrigin: false },
       '/healthz': { target: 'http://localhost:8080', changeOrigin: false },
     },
+  },
+  test: {
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 })
