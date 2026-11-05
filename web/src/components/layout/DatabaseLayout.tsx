@@ -11,7 +11,6 @@ const tabs = [
 ]
 
 // Kerangka semua halaman di bawah /databases/:db: breadcrumb, judul, dan tab bagian database.
-// Nama database memakai ID sampai FE-07 mengambilnya dari API.
 export function DatabaseLayout() {
   const { db = '' } = useParams()
   return (
