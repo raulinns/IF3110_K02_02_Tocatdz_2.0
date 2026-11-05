@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { ApiErrorView } from '../components/ui/ApiErrorView.tsx'
 import { ErrorPage } from '../components/ui/ErrorPage.tsx'
 import { PageSkeleton } from '../components/ui/Skeleton.tsx'
 import { useSession } from './session-context.ts'
@@ -21,7 +22,13 @@ export function RequireAuth() {
     case 'loading':
       return <FullscreenSkeleton />
     case 'error':
-      return <ErrorPage status={500} onRetry={state.retry} />
+      return (
+        <div className="fullscreen-center">
+          <div className="w-100" style={{ maxWidth: 560 }}>
+            <ApiErrorView error={state.error} onRetry={state.retry} />
+          </div>
+        </div>
+      )
     case 'anonymous':
       return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
     case 'authenticated':
