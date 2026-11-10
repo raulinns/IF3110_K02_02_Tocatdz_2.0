@@ -1,0 +1,7 @@
+extends:
+  - recommended
+rules:
+  # No repository license is declared. A contract PR must not invent a legal grant.
+  info-license: off
+  no-invalid-schema-examples: error
+  no-invalid-media-type-examples: error

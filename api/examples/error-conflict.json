@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "conflict",
+    "message": "Migration revision changed; reload before submitting.",
+    "request_id": "example-request-id",
+    "reason": "revision_mismatch"
+  }
+}

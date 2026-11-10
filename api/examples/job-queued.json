@@ -1,0 +1,25 @@
+{
+  "id": "60000000-0000-4000-8000-000000000001",
+  "database_id": "10000000-0000-4000-8000-000000000001",
+  "change_request_id": "50000000-0000-4000-8000-000000000001",
+  "execution_id": "70000000-0000-4000-8000-000000000001",
+  "migration_id": "20000000-0000-4000-8000-000000000001",
+  "kind": "apply",
+  "mode": "normal",
+  "status": "queued",
+  "attempt": 0,
+  "max_attempts": 3,
+  "run_after": "2026-11-10T10:00:00Z",
+  "queued_at": "2026-11-10T10:00:00Z",
+  "started_at": null,
+  "finished_at": null,
+  "partial": false,
+  "progress": {
+    "batches_committed": 0,
+    "rows_committed": 0,
+    "batches_reverted": 0,
+    "rows_reverted": 0,
+    "total_batches": null
+  },
+  "error": null
+}

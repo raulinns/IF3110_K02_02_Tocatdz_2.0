@@ -1,0 +1,38 @@
+{
+  "id": "50000000-0000-4000-8000-000000000001",
+  "database_id": "10000000-0000-4000-8000-000000000001",
+  "migration_id": "20000000-0000-4000-8000-000000000001",
+  "migration_revision": 1,
+  "checksum": "2d1d2608de76d78f25ad2ba34577509d51ae6aee9f41127db71762e27c69d443",
+  "revision": 1,
+  "kind": "apply",
+  "status": "pending_review",
+  "requested_by": "30000000-0000-4000-8000-000000000003",
+  "target_execution_id": null,
+  "source_job_id": null,
+  "expected_position_version": 0,
+  "approvals": [
+    {
+      "group_id": "40000000-0000-4000-8000-000000000001",
+      "group_name": "writers",
+      "access": "view_edit",
+      "leader_user_id": "30000000-0000-4000-8000-000000000001",
+      "decision": null,
+      "actor_id": null,
+      "note": "",
+      "decided_at": null
+    },
+    {
+      "group_id": "40000000-0000-4000-8000-000000000002",
+      "group_name": "readers",
+      "access": "view_only",
+      "leader_user_id": "30000000-0000-4000-8000-000000000002",
+      "decision": null,
+      "actor_id": null,
+      "note": "",
+      "decided_at": null
+    }
+  ],
+  "created_at": "2026-11-10T10:00:00Z",
+  "updated_at": "2026-11-10T10:00:00Z"
+}
