@@ -1,0 +1,15 @@
+{
+  "title": "Normalize orders",
+  "up_sql": "processed = true",
+  "down_sql": "processed = false",
+  "irreversible": false,
+  "irreversible_reason": "",
+  "mode": "batch",
+  "batch": {
+    "schema": "public",
+    "table": "orders",
+    "key_column": "id",
+    "batch_size": 1000,
+    "scope_where": "processed = false"
+  }
+}

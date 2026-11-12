@@ -1,0 +1,30 @@
+{
+  "id": "60000000-0000-4000-8000-000000000002",
+  "database_id": "10000000-0000-4000-8000-000000000001",
+  "change_request_id": "50000000-0000-4000-8000-000000000002",
+  "execution_id": "70000000-0000-4000-8000-000000000002",
+  "migration_id": "20000000-0000-4000-8000-000000000001",
+  "kind": "revert_batches",
+  "mode": "batch",
+  "status": "partially_reverted",
+  "attempt": 1,
+  "max_attempts": 3,
+  "run_after": "2026-11-10T10:00:00Z",
+  "queued_at": "2026-11-10T10:00:00Z",
+  "started_at": "2026-11-10T10:00:00Z",
+  "finished_at": "2026-11-10T10:00:10Z",
+  "partial": true,
+  "progress": {
+    "batches_committed": 4,
+    "rows_committed": 4000,
+    "batches_reverted": 2,
+    "rows_reverted": 2000,
+    "total_batches": null
+  },
+  "error": {
+    "code": "sql_error",
+    "message": "Batch failed; previously committed batches remain.",
+    "sqlstate": "23514",
+    "retryable": false
+  }
+}

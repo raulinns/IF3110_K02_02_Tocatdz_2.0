@@ -1,0 +1,4908 @@
+openapi: 3.0.3
+info:
+  title: Tocatdz 2.0 Milestone 2 API
+  version: 0.2.0-contract.1
+  description: K1 review candidate, not implemented routes. Read api/README.md and docs/contracts/m2.md. API JSON
+    uses snake_case, canonical UUIDs, UTC timestamps and explicit nulls. Same-origin cookie auth; no CORS. All protected
+    unsafe methods require X-CSRF-Token AND valid Origin/Referer. Login is Origin-protected but token-exempt. Every
+    API response is no-store with X-Request-ID. JSON bodies <=2 MiB (login <=16 KiB); SQL <=512 KiB each. Reject
+    unknown/repeated query keys, unknown JSON fields, duplicate JSON keys and trailing JSON. No body for membership/delete/logout
+    operations. API and domain models are mapped explicitly; secrets/session identifiers never appear in JSON. Query
+    params in examples must be URL-encoded. See docs for provisional Q&A policies and atomicity requirements.
+  contact:
+    name: K02-02 / 13524056 (contract owner)
+servers:
+- url: /api/v1
+  description: Same-origin API; Vite proxies /api during development.
+tags:
+- name: Auth
+  description: Cookie sessions and CSRF bootstrap.
+- name: Admin
+  description: Platform admin only; does not grant target access.
+- name: Explorer
+  description: Read-only catalog and data access.
+- name: Migrations
+  description: Versioned immutable SQL definitions.
+- name: Workflow
+  description: Group-leader review and asynchronous enqueue.
+- name: Jobs
+  description: Progress and attempt metadata.
+- name: History
+  description: Committed executions and linear position.
+- name: Operations
+  description: Internal operations endpoints outside the API prefix.
+security:
+- sessionCookie: []
+paths:
+  /auth/login:
+    post:
+      operationId: login
+      tags:
+      - Auth
+      summary: Login with cookie session
+      description: Origin/Referer + Sec-Fetch-Site and rate limit required. No CSRF token required before login.
+        JSON body <=16384 bytes. Set-Cookie creates session; response equals auth/me. Invalid credentials always
+        generic 401.
+      x-access: public
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthMe'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInput'
+  /auth/logout:
+    post:
+      operationId: logout
+      tags:
+      - Auth
+      summary: Revoke current session
+      description: No body. Requires CSRF header and Origin. Expire session cookie; revoke the entire current session
+        family.
+      x-access: authenticated
+      responses:
+        '204':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags:
+      - Auth
+      summary: Get identity, CSRF and leader groups
+      description: Get identity, CSRF and leader groups.
+      x-access: authenticated
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthMe'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /admin/users:
+    get:
+      operationId: listUsers
+      tags:
+      - Admin
+      summary: List users
+      description: Stable order by name/username ASC, id ASC. Never includes secrets.
+      x-access: platform_admin
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsersPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+    post:
+      operationId: createUser
+      tags:
+      - Admin
+      summary: Create user
+      description: Create user.
+      x-access: platform_admin
+      responses:
+        '201':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserInput'
+  /admin/users/{user_id}:
+    parameters:
+    - $ref: '#/components/parameters/user_id'
+    patch:
+      operationId: updateUser
+      tags:
+      - Admin
+      summary: Update user
+      description: Update user.
+      x-access: platform_admin
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserInput'
+  /admin/groups:
+    get:
+      operationId: listGroups
+      tags:
+      - Admin
+      summary: List groups
+      description: Stable order by name/username ASC, id ASC. Never includes secrets.
+      x-access: platform_admin
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+    post:
+      operationId: createGroup
+      tags:
+      - Admin
+      summary: Create group
+      description: Create group.
+      x-access: platform_admin
+      responses:
+        '201':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupInput'
+  /admin/groups/{group_id}:
+    parameters:
+    - $ref: '#/components/parameters/group_id'
+    patch:
+      operationId: updateGroup
+      tags:
+      - Admin
+      summary: Update group
+      description: Update group.
+      x-access: platform_admin
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupInput'
+    delete:
+      operationId: deleteGroup
+      tags:
+      - Admin
+      summary: Delete group
+      description: No body. Tombstone rather than erase historical references. Conflict if unresolved work depends
+        on resource. Changes invalidate affected authorization versions.
+      x-access: platform_admin
+      responses:
+        '204':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+  /admin/connections:
+    get:
+      operationId: listConnections
+      tags:
+      - Admin
+      summary: List connections
+      description: Stable order by name/username ASC, id ASC. Never includes secrets.
+      x-access: platform_admin
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+    post:
+      operationId: createConnection
+      tags:
+      - Admin
+      summary: Create connection
+      description: Create connection.
+      x-access: platform_admin
+      responses:
+        '201':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectionInput'
+  /admin/connections/{connection_id}:
+    parameters:
+    - $ref: '#/components/parameters/connection_id'
+    delete:
+      operationId: deleteConnection
+      tags:
+      - Admin
+      summary: Delete connection
+      description: No body. Tombstone rather than erase historical references. Conflict if unresolved work depends
+        on resource. Changes invalidate affected authorization versions.
+      x-access: platform_admin
+      responses:
+        '204':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+  /admin/groups/{group_id}/members:
+    parameters:
+    - $ref: '#/components/parameters/group_id'
+    get:
+      operationId: listGroupMembers
+      tags:
+      - Admin
+      summary: List group members
+      description: Stable username ASC, id ASC; avoids unbounded member arrays in group listings.
+      x-access: platform_admin
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsersPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+  /admin/groups/{group_id}/members/{user_id}:
+    parameters:
+    - $ref: '#/components/parameters/group_id'
+    - $ref: '#/components/parameters/user_id'
+    put:
+      operationId: addGroupMember
+      tags:
+      - Admin
+      summary: Add member idempotently
+      description: No body. Active admin rechecked inside transaction. Removing current leader is 409; replace leader
+        first. Exact repeated membership operation is idempotent.
+      x-access: platform_admin
+      responses:
+        '204':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+    delete:
+      operationId: removeGroupMember
+      tags:
+      - Admin
+      summary: Remove member
+      description: No body. Active admin rechecked inside transaction. Removing current leader is 409; replace leader
+        first. Exact repeated membership operation is idempotent.
+      x-access: platform_admin
+      responses:
+        '204':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+  /admin/groups/{group_id}/leader:
+    parameters:
+    - $ref: '#/components/parameters/group_id'
+    put:
+      operationId: setGroupLeader
+      tags:
+      - Admin
+      summary: Set active member as group leader
+      description: Set active member as group leader.
+      x-access: platform_admin
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaderInput'
+  /admin/grants:
+    get:
+      operationId: listGrants
+      tags:
+      - Admin
+      summary: List database grants
+      description: Stable group_id ASC, database_id ASC. No none grants; absence means no access.
+      x-access: platform_admin
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+  /admin/grants/{group_id}/{database_id}:
+    parameters:
+    - $ref: '#/components/parameters/group_id'
+    - $ref: '#/components/parameters/database_id'
+    put:
+      operationId: setGrant
+      tags:
+      - Admin
+      summary: Set database grant
+      description: Set database grant.
+      x-access: platform_admin
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantInput'
+    delete:
+      operationId: revokeGrant
+      tags:
+      - Admin
+      summary: Revoke database grant
+      description: Revoke database grant.
+      x-access: platform_admin
+      responses:
+        '204':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+  /databases:
+    get:
+      operationId: listDatabases
+      tags:
+      - Explorer
+      summary: List accessible databases
+      description: Only effective view/view_edit grants. Platform admin is not a database grant. Stable name ASC,
+        id ASC.
+      x-access: authenticated
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabasesPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+  /databases/{database_id}/schema:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    get:
+      operationId: getSchema
+      tags:
+      - Explorer
+      summary: Read schema catalog
+      description: Read schema catalog.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchemaCatalog'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /databases/{database_id}/tables/{schema}/{table}:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/schema'
+    - $ref: '#/components/parameters/table'
+    get:
+      operationId: getTable
+      tags:
+      - Explorer
+      summary: Read table metadata
+      description: Read table metadata.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Table'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /databases/{database_id}/tables/{schema}/{table}/rows:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/schema'
+    - $ref: '#/components/parameters/table'
+    get:
+      operationId: listRows
+      tags:
+      - Explorer
+      summary: Preview table rows
+      description: Preview table rows.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RowsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+  /databases/{database_id}/schema-diff:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    get:
+      operationId: compareSchemas
+      tags:
+      - Explorer
+      summary: Compare current and desired schema
+      description: Read permission required on BOTH databases. PostgreSQL only. Bounded catalog comparison; generates
+        SQL candidate without persisting/executing it.
+      x-access: view_both_databases
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchemaDiff'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - name: desired_database_id
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: current_schema
+        in: query
+        required: false
+        schema:
+          type: string
+          default: public
+      - name: desired_schema
+        in: query
+        required: false
+        schema:
+          type: string
+          default: public
+  /databases/{database_id}/migrations:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    get:
+      operationId: listMigrations
+      tags:
+      - Migrations
+      summary: List migration definitions
+      description: Stable created_at DESC, id DESC. Summary only; fetch detail for SQL review. Never log response
+        bodies.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+    post:
+      operationId: createMigration
+      tags:
+      - Migrations
+      summary: Create draft migration
+      description: Create draft migration.
+      x-access: view_edit
+      responses:
+        '201':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Migration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DefinitionInput'
+            examples:
+              normal:
+                value:
+                  title: Create example table
+                  up_sql: CREATE TABLE public.contract_example (id bigint PRIMARY KEY);
+                  down_sql: DROP TABLE public.contract_example;
+                  irreversible: false
+                  irreversible_reason: ''
+                  mode: normal
+                  batch: null
+              batch:
+                value:
+                  title: Normalize orders
+                  up_sql: processed = true
+                  down_sql: processed = false
+                  irreversible: false
+                  irreversible_reason: ''
+                  mode: batch
+                  batch:
+                    schema: public
+                    table: orders
+                    key_column: id
+                    batch_size: 1000
+                    scope_where: processed = false
+              irreversible:
+                value:
+                  title: Create example table
+                  up_sql: CREATE TABLE public.contract_example (id bigint PRIMARY KEY);
+                  down_sql: null
+                  irreversible: true
+                  irreversible_reason: Dropped data cannot be restored.
+                  mode: normal
+                  batch: null
+  /databases/{database_id}/migrations/{migration_id}:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/migration_id'
+    get:
+      operationId: getMigration
+      tags:
+      - Migrations
+      summary: Read migration definition
+      description: Read migration definition.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Migration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+    patch:
+      operationId: updateMigration
+      tags:
+      - Migrations
+      summary: Replace editable draft fields with CAS
+      description: Only state=draft, expected revision matches and never executed. Submitting freezes definition.
+        Editing a submitted/executed definition is 409; create a new draft instead.
+      x-access: view_edit
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Migration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDefinitionInput'
+  /databases/{database_id}/migrations/{migration_id}/plan:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/migration_id'
+    post:
+      operationId: explainMigration
+      tags:
+      - Migrations
+      summary: Explain selected saved SQL statement
+      description: PostgreSQL normal mode, validated selected direction/revision. No enqueue, receipt or history
+        append. ANALYZE only read-only SELECT; reject mutation ANALYZE. No replacement SQL accepted.
+      x-access: view_edit
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanInput'
+  /databases/{database_id}/change-requests:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    post:
+      operationId: submitChangeRequest
+      tags:
+      - Workflow
+      summary: Submit change for required group approvals
+      description: Atomically freeze definition, snapshot required active leaders for EVERY view/view_edit group,
+        revision/checksum and position. No leader/no grants => 422. One open CR per DB; blocked lineages allow only
+        matching recovery CR. No target mutation.
+      x-access: view_edit
+      responses:
+        '201':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitChangeInput'
+    get:
+      operationId: listChangeRequests
+      tags:
+      - Workflow
+      summary: List change requests
+      description: Stable created_at DESC, id DESC. Optional exact status filter.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequestsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/CRStatus'
+  /databases/{database_id}/change-requests/{change_request_id}:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/change_request_id'
+    get:
+      operationId: getChangeRequest
+      tags:
+      - Workflow
+      summary: Read change request and required approvals
+      description: Read change request and required approvals.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequest'
+              examples:
+                pending:
+                  value:
+                    id: 50000000-0000-4000-8000-000000000001
+                    database_id: 10000000-0000-4000-8000-000000000001
+                    migration_id: 20000000-0000-4000-8000-000000000001
+                    migration_revision: 1
+                    checksum: 2d1d2608de76d78f25ad2ba34577509d51ae6aee9f41127db71762e27c69d443
+                    revision: 1
+                    kind: apply
+                    status: pending_review
+                    requested_by: 30000000-0000-4000-8000-000000000003
+                    target_execution_id: null
+                    source_job_id: null
+                    expected_position_version: 0
+                    approvals:
+                    - group_id: 40000000-0000-4000-8000-000000000001
+                      group_name: writers
+                      access: view_edit
+                      leader_user_id: 30000000-0000-4000-8000-000000000001
+                      decision: null
+                      actor_id: null
+                      note: ''
+                      decided_at: null
+                    - group_id: 40000000-0000-4000-8000-000000000002
+                      group_name: readers
+                      access: view_only
+                      leader_user_id: 30000000-0000-4000-8000-000000000002
+                      decision: null
+                      actor_id: null
+                      note: ''
+                      decided_at: null
+                    created_at: '2026-11-10T10:00:00Z'
+                    updated_at: '2026-11-10T10:00:00Z'
+                one_approved:
+                  value:
+                    id: 50000000-0000-4000-8000-000000000001
+                    database_id: 10000000-0000-4000-8000-000000000001
+                    migration_id: 20000000-0000-4000-8000-000000000001
+                    migration_revision: 1
+                    checksum: 2d1d2608de76d78f25ad2ba34577509d51ae6aee9f41127db71762e27c69d443
+                    revision: 2
+                    kind: apply
+                    status: pending_review
+                    requested_by: 30000000-0000-4000-8000-000000000003
+                    target_execution_id: null
+                    source_job_id: null
+                    expected_position_version: 0
+                    approvals:
+                    - group_id: 40000000-0000-4000-8000-000000000001
+                      group_name: writers
+                      access: view_edit
+                      leader_user_id: 30000000-0000-4000-8000-000000000001
+                      decision: approve
+                      actor_id: 30000000-0000-4000-8000-000000000001
+                      note: Reviewed.
+                      decided_at: '2026-11-10T10:00:00Z'
+                    - group_id: 40000000-0000-4000-8000-000000000002
+                      group_name: readers
+                      access: view_only
+                      leader_user_id: 30000000-0000-4000-8000-000000000002
+                      decision: null
+                      actor_id: null
+                      note: ''
+                      decided_at: null
+                    created_at: '2026-11-10T10:00:00Z'
+                    updated_at: '2026-11-10T10:00:00Z'
+                approved:
+                  value:
+                    id: 50000000-0000-4000-8000-000000000001
+                    database_id: 10000000-0000-4000-8000-000000000001
+                    migration_id: 20000000-0000-4000-8000-000000000001
+                    migration_revision: 1
+                    checksum: 2d1d2608de76d78f25ad2ba34577509d51ae6aee9f41127db71762e27c69d443
+                    revision: 3
+                    kind: apply
+                    status: approved
+                    requested_by: 30000000-0000-4000-8000-000000000003
+                    target_execution_id: null
+                    source_job_id: null
+                    expected_position_version: 0
+                    approvals:
+                    - group_id: 40000000-0000-4000-8000-000000000001
+                      group_name: writers
+                      access: view_edit
+                      leader_user_id: 30000000-0000-4000-8000-000000000001
+                      decision: approve
+                      actor_id: 30000000-0000-4000-8000-000000000001
+                      note: Reviewed.
+                      decided_at: '2026-11-10T10:00:00Z'
+                    - group_id: 40000000-0000-4000-8000-000000000002
+                      group_name: readers
+                      access: view_only
+                      leader_user_id: 30000000-0000-4000-8000-000000000002
+                      decision: approve
+                      actor_id: 30000000-0000-4000-8000-000000000002
+                      note: Reviewed.
+                      decided_at: '2026-11-10T10:00:00Z'
+                    created_at: '2026-11-10T10:00:00Z'
+                    updated_at: '2026-11-10T10:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /databases/{database_id}/change-requests/{change_request_id}/approvals:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/change_request_id'
+    post:
+      operationId: decideChangeRequest
+      tags:
+      - Workflow
+      summary: Approve or reject for one required group
+      description: Authenticate and check current active leadership, snapshotted identity, group access and CAS.
+        view_only leaders can approve; platform_admin alone cannot. Self-approval provisionally denied pending Q&A.
+        Exact same decision replay succeeds without overwriting audit decision.
+      x-access: required_group_leader
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalInput'
+  /databases/{database_id}/change-requests/{change_request_id}/execute:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/change_request_id'
+    post:
+      operationId: enqueueChangeRequest
+      tags:
+      - Workflow
+      summary: Queue approved change asynchronously
+      description: Atomic approved->queued + persistent job, unique by CR. Verify all approvals, original definition
+        and position. Never waits for target SQL. Exact authorized replay returns same job with current status;
+        different inputs conflict. Location identifies job.
+      x-access: view_edit
+      responses:
+        '202':
+          description: Accepted asynchronously; Location points to /api/v1/jobs/{job_id}.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteInput'
+  /jobs/{job_id}:
+    parameters:
+    - $ref: '#/components/parameters/job_id'
+    get:
+      operationId: getJob
+      tags:
+      - Jobs
+      summary: Read job status and committed progress
+      description: Read job status and committed progress.
+      x-access: view_job_database
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+              examples:
+                queued:
+                  value:
+                    id: 60000000-0000-4000-8000-000000000001
+                    database_id: 10000000-0000-4000-8000-000000000001
+                    change_request_id: 50000000-0000-4000-8000-000000000001
+                    execution_id: 70000000-0000-4000-8000-000000000001
+                    migration_id: 20000000-0000-4000-8000-000000000001
+                    kind: apply
+                    mode: normal
+                    status: queued
+                    attempt: 0
+                    max_attempts: 3
+                    run_after: '2026-11-10T10:00:00Z'
+                    queued_at: '2026-11-10T10:00:00Z'
+                    started_at: null
+                    finished_at: null
+                    partial: false
+                    progress:
+                      batches_committed: 0
+                      rows_committed: 0
+                      batches_reverted: 0
+                      rows_reverted: 0
+                      total_batches: null
+                    error: null
+                partial:
+                  value:
+                    id: 60000000-0000-4000-8000-000000000001
+                    database_id: 10000000-0000-4000-8000-000000000001
+                    change_request_id: 50000000-0000-4000-8000-000000000001
+                    execution_id: 70000000-0000-4000-8000-000000000001
+                    migration_id: 20000000-0000-4000-8000-000000000001
+                    kind: apply
+                    mode: batch
+                    status: partial
+                    attempt: 1
+                    max_attempts: 3
+                    run_after: '2026-11-10T10:00:00Z'
+                    queued_at: '2026-11-10T10:00:00Z'
+                    started_at: '2026-11-10T10:00:00Z'
+                    finished_at: '2026-11-10T10:00:10Z'
+                    partial: true
+                    progress:
+                      batches_committed: 4
+                      rows_committed: 4000
+                      batches_reverted: 0
+                      rows_reverted: 0
+                      total_batches: null
+                    error:
+                      code: sql_error
+                      message: Batch failed; previously committed batches remain.
+                      sqlstate: '23514'
+                      retryable: false
+                uncertain:
+                  value:
+                    id: 60000000-0000-4000-8000-000000000001
+                    database_id: 10000000-0000-4000-8000-000000000001
+                    change_request_id: 50000000-0000-4000-8000-000000000001
+                    execution_id: 70000000-0000-4000-8000-000000000001
+                    migration_id: 20000000-0000-4000-8000-000000000001
+                    kind: apply
+                    mode: normal
+                    status: uncertain
+                    attempt: 1
+                    max_attempts: 3
+                    run_after: '2026-11-10T10:00:00Z'
+                    queued_at: '2026-11-10T10:00:00Z'
+                    started_at: '2026-11-10T10:00:00Z'
+                    finished_at: '2026-11-10T10:00:10Z'
+                    partial: false
+                    progress:
+                      batches_committed: 0
+                      rows_committed: 0
+                      batches_reverted: 0
+                      rows_reverted: 0
+                      total_batches: null
+                    error:
+                      code: commit_uncertain
+                      message: Commit evidence must be reconciled before retry.
+                      sqlstate: null
+                      retryable: false
+                partially_reverted:
+                  value:
+                    id: 60000000-0000-4000-8000-000000000002
+                    database_id: 10000000-0000-4000-8000-000000000001
+                    change_request_id: 50000000-0000-4000-8000-000000000002
+                    execution_id: 70000000-0000-4000-8000-000000000002
+                    migration_id: 20000000-0000-4000-8000-000000000001
+                    kind: revert_batches
+                    mode: batch
+                    status: partially_reverted
+                    attempt: 1
+                    max_attempts: 3
+                    run_after: '2026-11-10T10:00:00Z'
+                    queued_at: '2026-11-10T10:00:00Z'
+                    started_at: '2026-11-10T10:00:00Z'
+                    finished_at: '2026-11-10T10:00:10Z'
+                    partial: true
+                    progress:
+                      batches_committed: 4
+                      rows_committed: 4000
+                      batches_reverted: 2
+                      rows_reverted: 2000
+                      total_batches: null
+                    error:
+                      code: sql_error
+                      message: Batch failed; previously committed batches remain.
+                      sqlstate: '23514'
+                      retryable: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /jobs/{job_id}/attempts:
+    parameters:
+    - $ref: '#/components/parameters/job_id'
+    get:
+      operationId: listJobAttempts
+      tags:
+      - Jobs
+      summary: Read attempts including failures
+      description: Stable attempt ASC. Durable metadata only; SQL/log details are protected stdout records, never
+        a log database.
+      x-access: view_job_database
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+  /databases/{database_id}/jobs:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    get:
+      operationId: listDatabaseJobs
+      tags:
+      - Jobs
+      summary: List database jobs
+      description: Stable queued_at DESC, id DESC. Attempts are available from each job's /attempts endpoint.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/JobStatus'
+  /databases/{database_id}/executions:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    get:
+      operationId: listExecutions
+      tags:
+      - History
+      summary: Read append-only committed history
+      description: Stable committed_at DESC, id DESC. Pair across ALL history by reverts_execution_id BEFORE pagination.
+        Hide both original execution and its successful rollback, never a later forward. E1..E5 fixture hides E2/E3.
+        Failed/partial attempts remain in jobs; no history is deleted.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+      - name: hide_rollback
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+  /databases/{database_id}/position:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    get:
+      operationId: getPosition
+      tags:
+      - History
+      summary: Read linear active position and recovery barrier
+      description: Read linear active position and recovery barrier.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Position'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /databases/{database_id}/executions/{execution_id}:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/execution_id'
+    get:
+      operationId: getExecution
+      tags:
+      - History
+      summary: Read immutable committed SQL snapshot
+      description: Read immutable committed SQL snapshot.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Execution'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /databases/{database_id}/executions/{execution_id}/statements:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/execution_id'
+    get:
+      operationId: listExecutedStatements
+      tags:
+      - History
+      summary: Read redacted expanded driver SQL
+      description: Stable batch ASC then statement ordinal ASC. SQL literal/parameter redaction applies. Never loads
+        every batch into one response. Exact originals remain protected in target checkpoints/execution store.
+      x-access: view
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutedStatementsPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+  /healthz:
+    get:
+      operationId: health
+      tags:
+      - Operations
+      summary: Process liveness
+      description: Mounted at /healthz, outside /api/v1. Does not expose environment, credentials or SQL. Liveness
+        only; not proof of target availability.
+      x-access: internal
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      security: []
+    servers:
+    - url: /
+  /metrics:
+    get:
+      operationId: metrics
+      tags:
+      - Operations
+      summary: Prometheus metrics (optional bonus)
+      description: Mounted at /metrics outside /api/v1, only on internal network. Bonus owned by 13524044. Bounded
+        labels; no user/job IDs or SQL.
+      x-access: internal
+      responses:
+        '200':
+          description: Success.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            text/plain; version=0.0.4:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+      security: []
+    servers:
+    - url: /
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: tocatdz_session
+      description: HttpOnly cookie, browser-managed. Never put the session identifier in a response model.
+  parameters:
+    database_id:
+      name: database_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
+    migration_id:
+      name: migration_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
+    change_request_id:
+      name: change_request_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
+    job_id:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
+    execution_id:
+      name: execution_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
+    user_id:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
+    group_id:
+      name: group_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
+    connection_id:
+      name: connection_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
+    schema:
+      name: schema
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      description: One URL-encoded identifier; at most 63 UTF-8 bytes. No dotted SQL path.
+    table:
+      name: table
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      description: One URL-encoded identifier; at most 63 UTF-8 bytes.
+    page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 9007199254740991
+        default: 1
+      description: Canonical positive integer; offset (page-1)*limit <= 1000000.
+    limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 200
+        default: 50
+    csrf:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      description: Required for authenticated unsafe methods; get from /auth/me.
+  headers:
+    RequestID:
+      description: Server-generated request correlation ID (untrusted inbound IDs are replaced).
+      schema:
+        type: string
+    NoStore:
+      description: API responses must not be cached.
+      schema:
+        type: string
+        enum:
+        - no-store
+    SessionCookie:
+      description: HttpOnly; SameSite=Lax; Path=/; Secure in production. Session rotation can set this on ANY authenticated
+        response, including errors. Never read it from JS or expose it in JSON.
+      schema:
+        type: string
+    Location:
+      description: Relative URI of the created resource/job.
+      schema:
+        type: string
+    RetryAfter:
+      description: Delay in seconds before retrying.
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    BadRequest:
+      description: Malformed JSON/query/path; code bad_request.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthenticated:
+      description: Missing/expired session or invalid login; code unauthenticated.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Permission denied (forbidden) or invalid Origin/CSRF (csrf_failed).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Resource absent or not in the authorized database; code not_found.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    MethodNotAllowed:
+      description: Unsupported method; code method_not_allowed. Allow header is required.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+        Allow:
+          description: Supported methods.
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: CAS, workflow, membership, approval or position conflict; code conflict; optional stable reason.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    PayloadTooLarge:
+      description: Request body exceeds route limit; code payload_too_large.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnsupportedMediaType:
+      description: JSON request body requires application/json; code unsupported_media_type.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ValidationFailed:
+      description: Valid JSON but invalid fields/SQL (validation_failed), or result exceeds limits (result_too_large).
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: Login throttled; code rate_limited; Retry-After is required.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Internal:
+      description: Unexpected failure; code internal. No internal details.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unavailable:
+      description: Dependency temporarily unavailable; code unavailable.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestID'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Set-Cookie:
+          $ref: '#/components/headers/SessionCookie'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    ID:
+      type: string
+      format: uuid
+      pattern: ^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+      example: 30000000-0000-4000-8000-000000000001
+      description: Canonical lowercase, nonzero UUID; opaque identity.
+    Revision:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 9007199254740991
+      description: CAS token. Never infer this from list order or a timestamp.
+    Checksum:
+      type: string
+      pattern: ^[0-9a-f]{64}$
+      description: Version-1 definition checksum; clients display/cache it, never compute it.
+    Access:
+      type: string
+      enum:
+      - view_only
+      - view_edit
+    ChangeKind:
+      type: string
+      enum:
+      - apply
+      - rollback
+      - forward
+      - resume
+      - revert_batches
+    CRStatus:
+      type: string
+      enum:
+      - pending_review
+      - approved
+      - rejected
+      - queued
+      - running
+      - succeeded
+      - failed
+      - partial
+      - uncertain
+      - partially_reverted
+    JobStatus:
+      type: string
+      enum:
+      - queued
+      - running
+      - succeeded
+      - failed
+      - partial
+      - uncertain
+      - partially_reverted
+    ExecutionMode:
+      type: string
+      enum:
+      - normal
+      - batch
+    DefinitionState:
+      type: string
+      enum:
+      - draft
+      - frozen
+    Direction:
+      type: string
+      enum:
+      - up
+      - down
+    Decision:
+      type: string
+      enum:
+      - approve
+      - reject
+    ErrorCode:
+      type: string
+      enum:
+      - bad_request
+      - unauthenticated
+      - forbidden
+      - not_found
+      - method_not_allowed
+      - validation_failed
+      - conflict
+      - csrf_failed
+      - rate_limited
+      - payload_too_large
+      - unsupported_media_type
+      - result_too_large
+      - unavailable
+      - internal
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        request_id:
+          type: string
+        reason:
+          type: string
+          description: Optional stable domain reason, e.g. missing_leader, stale_approval, position_changed, irreversible,
+            database_blocked, revision_mismatch.
+        fields:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Keys are request field paths (e.g. batch.key_column); messages never echo submitted secrets.
+      required:
+      - code
+      - message
+      - request_id
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+      required:
+      - error
+      example:
+        error:
+          code: conflict
+          message: Migration revision changed; reload before submitting.
+          request_id: example-request-id
+          reason: revision_mismatch
+    User:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: ^[a-z0-9_]+$
+        active:
+          type: boolean
+        platform_admin:
+          type: boolean
+      required:
+      - id
+      - username
+      - active
+      - platform_admin
+    AuthMe:
+      type: object
+      additionalProperties: false
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        platform_admin:
+          type: boolean
+        csrf_token:
+          type: string
+          description: Opaque token. Keep in memory; refresh with /auth/me after session rotation or csrf_failed.
+            Never log it.
+        leader_of:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+      required:
+      - user
+      - platform_admin
+      - csrf_token
+      - leader_of
+      example:
+        user:
+          id: 30000000-0000-4000-8000-000000000001
+          username: reviewer
+          active: true
+          platform_admin: false
+        platform_admin: false
+        csrf_token: example-token-not-a-session-identifier
+        leader_of:
+        - 40000000-0000-4000-8000-000000000001
+    LoginInput:
+      type: object
+      additionalProperties: false
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: 'M1 normalization: trim and lowercase, resulting in 3-32 ASCII letters/digits/underscore.
+            Raw input <=128 UTF-8 bytes.'
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 1
+          description: Existing password; maximum 1024 UTF-8 bytes. New-password length policy does not apply to
+            login.
+      required:
+      - username
+      - password
+    CreateUserInput:
+      type: object
+      additionalProperties: false
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: 'M1 normalization: trim and lowercase, resulting in 3-32 ASCII letters/digits/underscore.
+            Raw input <=128 UTF-8 bytes.'
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 15
+          description: At least 15 Unicode code points and at most 1024 UTF-8 bytes, no trimming.
+        platform_admin:
+          type: boolean
+          default: false
+      required:
+      - username
+      - password
+    UpdateUserInput:
+      type: object
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 15
+          description: At least 15 Unicode code points and at most 1024 UTF-8 bytes, no trimming.
+      required: []
+      minProperties: 1
+      description: Atomic patch. Password reset revokes sessions. Cannot deactivate oneself or remove the last active
+        admin.
+    Group:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        leader_user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        member_count:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+      required:
+      - id
+      - name
+      - leader_user_id
+      - member_count
+    GroupInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+      required:
+      - name
+    LeaderInput:
+      type: object
+      additionalProperties: false
+      properties:
+        user_id:
+          $ref: '#/components/schemas/ID'
+      required:
+      - user_id
+      description: Must be an active member. Removing the current leader from membership is a conflict; replace
+        leader first.
+    Connection:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        name:
+          type: string
+        engine:
+          type: string
+          enum:
+          - postgresql
+          - mysql
+      required:
+      - id
+      - name
+      - engine
+      description: Never includes DSN, host credentials, or secret configuration. MySQL is retained for M1 compatibility;
+        M2 workflow requires PostgreSQL.
+    ConnectionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        engine:
+          type: string
+          enum:
+          - postgresql
+          - mysql
+        dsn:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 1
+          description: At most 4096 UTF-8 bytes; validated with restricted-role/receipt protections before storing.
+      required:
+      - name
+      - engine
+      - dsn
+    Grant:
+      type: object
+      additionalProperties: false
+      properties:
+        group_id:
+          $ref: '#/components/schemas/ID'
+        group_name:
+          type: string
+        database_id:
+          $ref: '#/components/schemas/ID'
+        database_name:
+          type: string
+        access:
+          $ref: '#/components/schemas/Access'
+      required:
+      - group_id
+      - group_name
+      - database_id
+      - database_name
+      - access
+    GrantInput:
+      type: object
+      additionalProperties: false
+      properties:
+        access:
+          $ref: '#/components/schemas/Access'
+      required:
+      - access
+    Database:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        name:
+          type: string
+        engine:
+          type: string
+          enum:
+          - postgresql
+          - mysql
+        access:
+          $ref: '#/components/schemas/Access'
+        capabilities:
+          type: object
+          additionalProperties: false
+          properties:
+            schema_diff:
+              type: boolean
+            query_plans:
+              type: boolean
+            workflow:
+              type: boolean
+            batch:
+              type: boolean
+          required:
+          - schema_diff
+          - query_plans
+          - workflow
+          - batch
+      required:
+      - id
+      - name
+      - engine
+      - access
+      - capabilities
+    TableKind:
+      type: string
+      enum:
+      - table
+      - partitioned_table
+      - view
+      - materialized_view
+    TableSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/TableKind'
+      required:
+      - name
+      - kind
+    Schema:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        tables:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableSummary'
+      required:
+      - name
+      - tables
+    SchemaCatalog:
+      type: object
+      additionalProperties: false
+      properties:
+        schemas:
+          type: array
+          items:
+            $ref: '#/components/schemas/Schema'
+      required:
+      - schemas
+      description: Bounded catalog snapshot (M1 limits); not a paginated list.
+    Column:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        data_type:
+          type: string
+        nullable:
+          type: boolean
+        default:
+          type: string
+          nullable: true
+      required:
+      - name
+      - data_type
+      - nullable
+      - default
+    Constraint:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        definition:
+          type: string
+      required:
+      - name
+      - type
+      - definition
+    Index:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        definition:
+          type: string
+        unique:
+          type: boolean
+        primary:
+          type: boolean
+      required:
+      - name
+      - definition
+      - unique
+      - primary
+    Table:
+      type: object
+      additionalProperties: false
+      properties:
+        schema:
+          type: string
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/TableKind'
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/Column'
+        constraints:
+          type: array
+          items:
+            $ref: '#/components/schemas/Constraint'
+        indexes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Index'
+      required:
+      - schema
+      - name
+      - kind
+      - columns
+      - constraints
+      - indexes
+    Cell:
+      type: object
+      additionalProperties: false
+      properties:
+        text:
+          type: string
+        'null':
+          type: boolean
+        truncated:
+          type: boolean
+        encoding:
+          type: string
+          enum:
+          - text
+          - hex
+      required:
+      - text
+      - 'null'
+      - truncated
+      - encoding
+      description: Preview only; text is bounded to 4096 bytes. NULL uses null=true and empty text. JSON remains
+        display text; binary uses hex.
+    RowsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+        items:
+          type: array
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/Cell'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+        order:
+          type: string
+          enum:
+          - primary_key
+          - best_effort
+      required:
+      - columns
+      - items
+      - page
+      - limit
+      - has_next
+      - order
+      description: Adapter maps M1 RowsPage.Rows to items. Rows without PK have best-effort ordering; payload bounded
+        to 2 MiB.
+    SchemaChange:
+      type: object
+      additionalProperties: false
+      properties:
+        action:
+          type: string
+          enum:
+          - add
+          - drop
+          - alter
+        object:
+          type: string
+        name:
+          type: string
+        before:
+          type: string
+        after:
+          type: string
+        destructive:
+          type: boolean
+      required:
+      - action
+      - object
+      - name
+      - before
+      - after
+      - destructive
+    SchemaDiff:
+      type: object
+      additionalProperties: false
+      properties:
+        current_database_id:
+          $ref: '#/components/schemas/ID'
+        desired_database_id:
+          $ref: '#/components/schemas/ID'
+        current_schema:
+          type: string
+        desired_schema:
+          type: string
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaChange'
+        warnings:
+          type: array
+          items:
+            type: string
+        generated_up_sql:
+          type: string
+        validation:
+          type: string
+        destructive_count:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+      required:
+      - current_database_id
+      - desired_database_id
+      - current_schema
+      - desired_schema
+      - changes
+      - warnings
+      - generated_up_sql
+      - validation
+      - destructive_count
+      description: SQL candidate only; no auto-execution or guaranteed down SQL. Draft creation still requires explicit
+        down SQL or irreversible reason.
+    BatchConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 63
+        table:
+          type: string
+          minLength: 1
+          maxLength: 63
+        key_column:
+          type: string
+          minLength: 1
+          maxLength: 63
+        batch_size:
+          type: integer
+          format: int64
+          minimum: 100
+          maximum: 100000
+        scope_where:
+          type: string
+          nullable: true
+      required:
+      - schema
+      - table
+      - key_column
+      - batch_size
+      - scope_where
+      description: PostgreSQL UPDATE-only, K4 coordination required. Identifiers are single names, max 63 UTF-8
+        bytes. Key must be unique, non-null, immutable smallint/integer/bigint. scope_where is a restricted expression,
+        not arbitrary SQL.
+    DefinitionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        up_sql:
+          type: string
+          minLength: 1
+          description: 'Normal: complete validated SQL. Batch: SET assignments without SET keyword. At most 524288
+            UTF-8 bytes.'
+        down_sql:
+          type: string
+          nullable: true
+          description: Same size/format as up_sql. Null only for irreversible migration.
+        irreversible:
+          type: boolean
+        irreversible_reason:
+          type: string
+          maxLength: 2000
+        mode:
+          $ref: '#/components/schemas/ExecutionMode'
+        batch:
+          anyOf:
+          - $ref: '#/components/schemas/BatchConfig'
+          - type: object
+            nullable: true
+            enum:
+            - null
+      required:
+      - title
+      - up_sql
+      - down_sql
+      - irreversible
+      - irreversible_reason
+      - mode
+      - batch
+      allOf:
+      - oneOf:
+        - properties:
+            irreversible:
+              enum:
+              - false
+            down_sql:
+              type: string
+              minLength: 1
+            irreversible_reason:
+              enum:
+              - ''
+        - properties:
+            irreversible:
+              enum:
+              - true
+            down_sql:
+              type: string
+              enum:
+              - null
+              nullable: true
+            irreversible_reason:
+              type: string
+              minLength: 1
+      - oneOf:
+        - properties:
+            mode:
+              enum:
+              - normal
+            batch:
+              type: object
+              enum:
+              - null
+              nullable: true
+        - properties:
+            mode:
+              enum:
+              - batch
+            batch:
+              $ref: '#/components/schemas/BatchConfig'
+      example:
+        title: Create example table
+        up_sql: CREATE TABLE public.contract_example (id bigint PRIMARY KEY);
+        down_sql: DROP TABLE public.contract_example;
+        irreversible: false
+        irreversible_reason: ''
+        mode: normal
+        batch: null
+    UpdateDefinitionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        up_sql:
+          type: string
+          minLength: 1
+          description: 'Normal: complete validated SQL. Batch: SET assignments without SET keyword. At most 524288
+            UTF-8 bytes.'
+        down_sql:
+          type: string
+          nullable: true
+          description: Same size/format as up_sql. Null only for irreversible migration.
+        irreversible:
+          type: boolean
+        irreversible_reason:
+          type: string
+          maxLength: 2000
+        mode:
+          $ref: '#/components/schemas/ExecutionMode'
+        batch:
+          anyOf:
+          - $ref: '#/components/schemas/BatchConfig'
+          - type: object
+            nullable: true
+            enum:
+            - null
+        revision:
+          $ref: '#/components/schemas/Revision'
+      required:
+      - title
+      - up_sql
+      - down_sql
+      - irreversible
+      - irreversible_reason
+      - mode
+      - batch
+      - revision
+      allOf:
+      - oneOf:
+        - properties:
+            irreversible:
+              enum:
+              - false
+            down_sql:
+              type: string
+              minLength: 1
+            irreversible_reason:
+              enum:
+              - ''
+        - properties:
+            irreversible:
+              enum:
+              - true
+            down_sql:
+              type: string
+              enum:
+              - null
+              nullable: true
+            irreversible_reason:
+              type: string
+              minLength: 1
+      - oneOf:
+        - properties:
+            mode:
+              enum:
+              - normal
+            batch:
+              type: object
+              enum:
+              - null
+              nullable: true
+        - properties:
+            mode:
+              enum:
+              - batch
+            batch:
+              $ref: '#/components/schemas/BatchConfig'
+      description: Full replacement of editable fields, guarded by revision. PATCH is not an arbitrary JSON merge
+        patch.
+      example:
+        title: Create example table
+        up_sql: CREATE TABLE public.contract_example (id bigint PRIMARY KEY);
+        down_sql: DROP TABLE public.contract_example;
+        irreversible: false
+        irreversible_reason: ''
+        mode: normal
+        batch: null
+        revision: 1
+    Migration:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        up_sql:
+          type: string
+          minLength: 1
+          description: 'Normal: complete validated SQL. Batch: SET assignments without SET keyword. At most 524288
+            UTF-8 bytes.'
+        down_sql:
+          type: string
+          nullable: true
+          description: Same size/format as up_sql. Null only for irreversible migration.
+        irreversible:
+          type: boolean
+        irreversible_reason:
+          type: string
+          maxLength: 2000
+        mode:
+          $ref: '#/components/schemas/ExecutionMode'
+        batch:
+          anyOf:
+          - $ref: '#/components/schemas/BatchConfig'
+          - type: object
+            nullable: true
+            enum:
+            - null
+        id:
+          $ref: '#/components/schemas/ID'
+        database_id:
+          $ref: '#/components/schemas/ID'
+        state:
+          $ref: '#/components/schemas/DefinitionState'
+        revision:
+          $ref: '#/components/schemas/Revision'
+        checksum:
+          $ref: '#/components/schemas/Checksum'
+        created_by:
+          $ref: '#/components/schemas/ID'
+        created_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        first_execution_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+          nullable: true
+      required:
+      - title
+      - up_sql
+      - down_sql
+      - irreversible
+      - irreversible_reason
+      - mode
+      - batch
+      - id
+      - database_id
+      - state
+      - revision
+      - checksum
+      - created_by
+      - created_at
+      - updated_at
+      - first_execution_at
+      description: Submitted definitions are frozen; new review after rejection uses a new draft. SQL can never
+        be replaced on rollback/forward. Explicit SQL DTO mapping only.
+      example:
+        title: Create example table
+        up_sql: CREATE TABLE public.contract_example (id bigint PRIMARY KEY);
+        down_sql: DROP TABLE public.contract_example;
+        irreversible: false
+        irreversible_reason: ''
+        mode: normal
+        batch: null
+        id: 20000000-0000-4000-8000-000000000001
+        database_id: 10000000-0000-4000-8000-000000000001
+        state: draft
+        revision: 1
+        checksum: 2d1d2608de76d78f25ad2ba34577509d51ae6aee9f41127db71762e27c69d443
+        created_by: 30000000-0000-4000-8000-000000000001
+        created_at: '2026-11-10T10:00:00Z'
+        updated_at: '2026-11-10T10:00:00Z'
+        first_execution_at: null
+    PlanInput:
+      type: object
+      additionalProperties: false
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        direction:
+          $ref: '#/components/schemas/Direction'
+        statement:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000
+        analyze:
+          type: boolean
+      required:
+      - revision
+      - direction
+      - statement
+      - analyze
+      description: Normal-mode only. ANALYZE allowed only for read-only SELECT; never execute mutating SQL through
+        this endpoint.
+    PlanNode:
+      type: object
+      additionalProperties: false
+      properties:
+        node_type:
+          type: string
+        relation:
+          type: string
+        schema:
+          type: string
+        index:
+          type: string
+        join:
+          type: string
+        strategy:
+          type: string
+        startup_cost:
+          type: number
+        total_cost:
+          type: number
+        rows:
+          type: number
+        width:
+          type: number
+        actual_startup_ms:
+          type: number
+        actual_total_ms:
+          type: number
+        actual_rows:
+          type: number
+        actual_loops:
+          type: number
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanNode'
+      required:
+      - node_type
+      - startup_cost
+      - total_cost
+      - rows
+      - width
+      description: Allowlisted normalized M1 plan tree; PostgreSQL raw expression fields are omitted.
+    Plan:
+      type: object
+      additionalProperties: false
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        checksum:
+          $ref: '#/components/schemas/Checksum'
+        direction:
+          $ref: '#/components/schemas/Direction'
+        statement:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        analyze:
+          type: boolean
+        plan:
+          $ref: '#/components/schemas/PlanNode'
+        planning_ms:
+          type: number
+          nullable: true
+        execution_ms:
+          type: number
+          nullable: true
+      required:
+      - revision
+      - checksum
+      - direction
+      - statement
+      - analyze
+      - plan
+      - planning_ms
+      - execution_ms
+    SubmitChangeInput:
+      type: object
+      additionalProperties: false
+      properties:
+        migration_id:
+          $ref: '#/components/schemas/ID'
+        migration_revision:
+          $ref: '#/components/schemas/Revision'
+        kind:
+          $ref: '#/components/schemas/ChangeKind'
+        target_execution_id:
+          $ref: '#/components/schemas/ID'
+        source_job_id:
+          $ref: '#/components/schemas/ID'
+      required:
+      - migration_id
+      - migration_revision
+      - kind
+      oneOf:
+      - properties:
+          kind:
+            enum:
+            - apply
+        not:
+          properties:
+            target_execution_id:
+              $ref: '#/components/schemas/ID'
+          required:
+          - target_execution_id
+      - properties:
+          kind:
+            enum:
+            - rollback
+            - forward
+          target_execution_id:
+            $ref: '#/components/schemas/ID'
+        required:
+        - target_execution_id
+        not:
+          properties:
+            source_job_id:
+              $ref: '#/components/schemas/ID'
+          required:
+          - source_job_id
+      - properties:
+          kind:
+            enum:
+            - resume
+            - revert_batches
+          source_job_id:
+            $ref: '#/components/schemas/ID'
+        required:
+        - source_job_id
+        not:
+          properties:
+            target_execution_id:
+              $ref: '#/components/schemas/ID'
+          required:
+          - target_execution_id
+      description: Creates a pending_review CR and freezes definition in one tx. Forward targets the original UP
+        execution in the redo chain. Resume/revert references latest source job without replacement SQL. Apply may
+        include source_job_id ONLY for a separately reviewed repair migration resolving that known partial lineage;
+        ordinary apply omits it. Uncertain work must be reconciled first.
+      example:
+        migration_id: 20000000-0000-4000-8000-000000000001
+        migration_revision: 1
+        kind: apply
+    Approval:
+      type: object
+      additionalProperties: false
+      properties:
+        group_id:
+          $ref: '#/components/schemas/ID'
+        group_name:
+          type: string
+        access:
+          $ref: '#/components/schemas/Access'
+        leader_user_id:
+          $ref: '#/components/schemas/ID'
+        decision:
+          type: string
+          enum:
+          - approve
+          - reject
+          - null
+          nullable: true
+        actor_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        note:
+          type: string
+        decided_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+          nullable: true
+      required:
+      - group_id
+      - group_name
+      - access
+      - leader_user_id
+      - decision
+      - actor_id
+      - note
+      - decided_at
+    ChangeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        database_id:
+          $ref: '#/components/schemas/ID'
+        migration_id:
+          $ref: '#/components/schemas/ID'
+        migration_revision:
+          $ref: '#/components/schemas/Revision'
+        checksum:
+          $ref: '#/components/schemas/Checksum'
+        revision:
+          $ref: '#/components/schemas/Revision'
+        kind:
+          $ref: '#/components/schemas/ChangeKind'
+        status:
+          $ref: '#/components/schemas/CRStatus'
+        requested_by:
+          $ref: '#/components/schemas/ID'
+        target_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        source_job_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        expected_position_version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        approvals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Approval'
+        created_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+      required:
+      - id
+      - database_id
+      - migration_id
+      - migration_revision
+      - checksum
+      - revision
+      - kind
+      - status
+      - requested_by
+      - target_execution_id
+      - source_job_id
+      - expected_position_version
+      - approvals
+      - created_at
+      - updated_at
+      example:
+        id: 50000000-0000-4000-8000-000000000001
+        database_id: 10000000-0000-4000-8000-000000000001
+        migration_id: 20000000-0000-4000-8000-000000000001
+        migration_revision: 1
+        checksum: 2d1d2608de76d78f25ad2ba34577509d51ae6aee9f41127db71762e27c69d443
+        revision: 1
+        kind: apply
+        status: pending_review
+        requested_by: 30000000-0000-4000-8000-000000000003
+        target_execution_id: null
+        source_job_id: null
+        expected_position_version: 0
+        approvals:
+        - group_id: 40000000-0000-4000-8000-000000000001
+          group_name: writers
+          access: view_edit
+          leader_user_id: 30000000-0000-4000-8000-000000000001
+          decision: null
+          actor_id: null
+          note: ''
+          decided_at: null
+        - group_id: 40000000-0000-4000-8000-000000000002
+          group_name: readers
+          access: view_only
+          leader_user_id: 30000000-0000-4000-8000-000000000002
+          decision: null
+          actor_id: null
+          note: ''
+          decided_at: null
+        created_at: '2026-11-10T10:00:00Z'
+        updated_at: '2026-11-10T10:00:00Z'
+    ApprovalInput:
+      type: object
+      additionalProperties: false
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        group_id:
+          $ref: '#/components/schemas/ID'
+        decision:
+          $ref: '#/components/schemas/Decision'
+        note:
+          type: string
+          maxLength: 2000
+      required:
+      - revision
+      - group_id
+      - decision
+      description: Exactly one group per call. Leader with view_only may approve for their required group. No implicit
+        approval for other groups. Exact replay is idempotent; changed decision is 409.
+      example:
+        revision: 1
+        group_id: 40000000-0000-4000-8000-000000000001
+        decision: approve
+        note: Reviewed application compatibility.
+    ExecuteInput:
+      type: object
+      additionalProperties: false
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+      required:
+      - revision
+      example:
+        revision: 3
+    JobAccepted:
+      type: object
+      additionalProperties: false
+      properties:
+        job_id:
+          $ref: '#/components/schemas/ID'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+      required:
+      - job_id
+      - status
+      description: Initial submission returns queued. An authorized exact replay returns the SAME job ID and its
+        CURRENT status, never promises that a completed job is queued.
+      example:
+        job_id: 60000000-0000-4000-8000-000000000001
+        status: queued
+    JobErrorCode:
+      type: string
+      enum:
+      - sql_error
+      - connection_error
+      - interrupted
+      - revalidation_failed
+      - commit_uncertain
+      - unsafe_revert
+    JobFailure:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/JobErrorCode'
+        message:
+          type: string
+        sqlstate:
+          type: string
+          nullable: true
+          pattern: ^[0-9A-Z]{5}$
+        retryable:
+          type: boolean
+      required:
+      - code
+      - message
+      - sqlstate
+      - retryable
+      description: Allowlisted safe error; never raw driver text, query parameter values, credentials, or DSN.
+    Progress:
+      type: object
+      additionalProperties: false
+      properties:
+        batches_committed:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        rows_committed:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        batches_reverted:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        rows_reverted:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        total_batches:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+          nullable: true
+      required:
+      - batches_committed
+      - rows_committed
+      - batches_reverted
+      - rows_reverted
+      - total_batches
+      description: Counts only target-proven commits for this execution lineage, including resume predecessors.
+        Reverted counts do not erase committed counts. total_batches=null when unknown.
+    Job:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        database_id:
+          $ref: '#/components/schemas/ID'
+        change_request_id:
+          $ref: '#/components/schemas/ID'
+        execution_id:
+          $ref: '#/components/schemas/ID'
+        migration_id:
+          $ref: '#/components/schemas/ID'
+        kind:
+          $ref: '#/components/schemas/ChangeKind'
+        mode:
+          $ref: '#/components/schemas/ExecutionMode'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        attempt:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        max_attempts:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 10
+        run_after:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        queued_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        started_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+          nullable: true
+        partial:
+          type: boolean
+        progress:
+          $ref: '#/components/schemas/Progress'
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/JobFailure'
+          - type: object
+            nullable: true
+            enum:
+            - null
+      required:
+      - id
+      - database_id
+      - change_request_id
+      - execution_id
+      - migration_id
+      - kind
+      - mode
+      - status
+      - attempt
+      - max_attempts
+      - run_after
+      - queued_at
+      - started_at
+      - finished_at
+      - partial
+      - progress
+      - error
+      description: Attempt is zero before first claim. running includes waiting for lock/revalidation. Poll queued/running;
+        partial, uncertain and partially_reverted require recovery/reconciliation. Internal lease and trace carrier
+        never appear here.
+      example:
+        id: 60000000-0000-4000-8000-000000000001
+        database_id: 10000000-0000-4000-8000-000000000001
+        change_request_id: 50000000-0000-4000-8000-000000000001
+        execution_id: 70000000-0000-4000-8000-000000000001
+        migration_id: 20000000-0000-4000-8000-000000000001
+        kind: apply
+        mode: normal
+        status: queued
+        attempt: 0
+        max_attempts: 3
+        run_after: '2026-11-10T10:00:00Z'
+        queued_at: '2026-11-10T10:00:00Z'
+        started_at: null
+        finished_at: null
+        partial: false
+        progress:
+          batches_committed: 0
+          rows_committed: 0
+          batches_reverted: 0
+          rows_reverted: 0
+          total_batches: null
+        error: null
+    JobAttempt:
+      type: object
+      additionalProperties: false
+      properties:
+        attempt:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        started_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        finished_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+          nullable: true
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/JobFailure'
+          - type: object
+            nullable: true
+            enum:
+            - null
+      required:
+      - attempt
+      - status
+      - started_at
+      - finished_at
+      - error
+      description: Durable job attempt metadata, not an application log sink. Includes failures; application logs
+        still go to stdout.
+    ExecutedStatement:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+        params:
+          type: array
+          items:
+            type: string
+            enum:
+            - '[REDACTED]'
+        batch:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+          nullable: true
+      required:
+      - query
+      - params
+      - batch
+      description: Actual driver query after literal redaction; params always [REDACTED]. Original SQL bytes remain
+        in protected execution snapshot, never raw log output.
+    Execution:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        database_id:
+          $ref: '#/components/schemas/ID'
+        migration_id:
+          $ref: '#/components/schemas/ID'
+        migration_revision:
+          $ref: '#/components/schemas/Revision'
+        checksum:
+          $ref: '#/components/schemas/Checksum'
+        change_request_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        job_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        operation:
+          $ref: '#/components/schemas/ChangeKind'
+        direction:
+          $ref: '#/components/schemas/Direction'
+        status:
+          type: string
+          enum:
+          - committed
+        reverts_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        forward_of_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        sql_snapshot:
+          type: string
+        actor_id:
+          $ref: '#/components/schemas/ID'
+        actor:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        committed_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        position_version:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+      required:
+      - id
+      - database_id
+      - migration_id
+      - migration_revision
+      - checksum
+      - change_request_id
+      - job_id
+      - operation
+      - direction
+      - status
+      - reverts_execution_id
+      - forward_of_execution_id
+      - sql_snapshot
+      - actor_id
+      - actor
+      - started_at
+      - committed_at
+      - position_version
+      description: Append-only committed logical operation. sql_snapshot is exact authorized up/down template, for
+        authenticated review only (never log response body). Statements are redacted expanded SQL. Partial batches
+        stay in checkpoints/jobs. M1 backfill may have null job/CR IDs. Expanded statements use the separate paginated
+        /statements endpoint.
+      example:
+        id: 70000000-0000-4000-8000-000000000001
+        database_id: 10000000-0000-4000-8000-000000000001
+        migration_id: 20000000-0000-4000-8000-000000000001
+        migration_revision: 1
+        checksum: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        change_request_id: 50000000-0000-4000-8000-000000000001
+        job_id: 60000000-0000-4000-8000-000000000001
+        operation: apply
+        direction: up
+        status: committed
+        reverts_execution_id: null
+        forward_of_execution_id: null
+        actor_id: 30000000-0000-4000-8000-000000000003
+        actor: contract-editor
+        started_at: '2026-11-10T10:01:00Z'
+        committed_at: '2026-11-10T10:01:01Z'
+        position_version: 1
+        sql_snapshot: SELECT 1;
+    ExecutionSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        database_id:
+          $ref: '#/components/schemas/ID'
+        migration_id:
+          $ref: '#/components/schemas/ID'
+        migration_revision:
+          $ref: '#/components/schemas/Revision'
+        checksum:
+          $ref: '#/components/schemas/Checksum'
+        change_request_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        job_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        operation:
+          $ref: '#/components/schemas/ChangeKind'
+        direction:
+          $ref: '#/components/schemas/Direction'
+        status:
+          type: string
+          enum:
+          - committed
+        reverts_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        forward_of_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        actor_id:
+          $ref: '#/components/schemas/ID'
+        actor:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        committed_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        position_version:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+      required:
+      - id
+      - database_id
+      - migration_id
+      - migration_revision
+      - checksum
+      - change_request_id
+      - job_id
+      - operation
+      - direction
+      - status
+      - reverts_execution_id
+      - forward_of_execution_id
+      - actor_id
+      - actor
+      - started_at
+      - committed_at
+      - position_version
+      description: List projection excludes SQL bodies. Fetch execution detail for the immutable SQL snapshot.
+    MigrationSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        irreversible:
+          type: boolean
+        mode:
+          $ref: '#/components/schemas/ExecutionMode'
+        id:
+          $ref: '#/components/schemas/ID'
+        database_id:
+          $ref: '#/components/schemas/ID'
+        state:
+          $ref: '#/components/schemas/DefinitionState'
+        revision:
+          $ref: '#/components/schemas/Revision'
+        checksum:
+          $ref: '#/components/schemas/Checksum'
+        created_by:
+          $ref: '#/components/schemas/ID'
+        created_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+        first_execution_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC, ending in Z.
+          example: '2026-11-10T10:00:00Z'
+          nullable: true
+      required:
+      - title
+      - irreversible
+      - mode
+      - id
+      - database_id
+      - state
+      - revision
+      - checksum
+      - created_by
+      - created_at
+      - updated_at
+      - first_execution_at
+      description: List projection excludes SQL bodies. Fetch migration detail for review/editing.
+    Position:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        active_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        active_migration_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        can_rollback:
+          type: boolean
+        rollback_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        can_forward:
+          type: boolean
+        forward_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        forward_migration_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+        blocked_by_job_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when not applicable.
+      required:
+      - version
+      - active_execution_id
+      - active_migration_id
+      - can_rollback
+      - rollback_execution_id
+      - can_forward
+      - forward_execution_id
+      - forward_migration_id
+      - blocked_by_job_id
+      description: Capabilities describe position/reversibility only, not caller authorization. Viewer can read
+        these values; UI must also check access. Blocked databases cannot apply/rollback/forward new work.
+    Health:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+      required:
+      - status
+    UsersPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+    GroupsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+    ConnectionsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Connection'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+    GrantsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+    DatabasesPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Database'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+    MigrationsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MigrationSummary'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+    ChangeRequestsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeRequest'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+    JobsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+    AttemptsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobAttempt'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+    ExecutionsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionSummary'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
+      example:
+        items:
+        - id: 70000000-0000-4000-8000-000000000005
+          database_id: 10000000-0000-4000-8000-000000000001
+          migration_id: 20000000-0000-4000-8000-000000000003
+          migration_revision: 1
+          checksum: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          change_request_id: 50000000-0000-4000-8000-000000000005
+          job_id: 60000000-0000-4000-8000-000000000005
+          operation: apply
+          direction: up
+          status: committed
+          reverts_execution_id: null
+          forward_of_execution_id: null
+          actor_id: 30000000-0000-4000-8000-000000000003
+          actor: contract-editor
+          started_at: '2026-11-10T10:05:00Z'
+          committed_at: '2026-11-10T10:05:01Z'
+          position_version: 5
+        - id: 70000000-0000-4000-8000-000000000004
+          database_id: 10000000-0000-4000-8000-000000000001
+          migration_id: 20000000-0000-4000-8000-000000000002
+          migration_revision: 1
+          checksum: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          change_request_id: 50000000-0000-4000-8000-000000000004
+          job_id: 60000000-0000-4000-8000-000000000004
+          operation: forward
+          direction: up
+          status: committed
+          reverts_execution_id: null
+          forward_of_execution_id: 70000000-0000-4000-8000-000000000002
+          actor_id: 30000000-0000-4000-8000-000000000003
+          actor: contract-editor
+          started_at: '2026-11-10T10:04:00Z'
+          committed_at: '2026-11-10T10:04:01Z'
+          position_version: 4
+        - id: 70000000-0000-4000-8000-000000000003
+          database_id: 10000000-0000-4000-8000-000000000001
+          migration_id: 20000000-0000-4000-8000-000000000002
+          migration_revision: 1
+          checksum: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          change_request_id: 50000000-0000-4000-8000-000000000003
+          job_id: 60000000-0000-4000-8000-000000000003
+          operation: rollback
+          direction: down
+          status: committed
+          reverts_execution_id: 70000000-0000-4000-8000-000000000002
+          forward_of_execution_id: null
+          actor_id: 30000000-0000-4000-8000-000000000003
+          actor: contract-editor
+          started_at: '2026-11-10T10:03:00Z'
+          committed_at: '2026-11-10T10:03:01Z'
+          position_version: 3
+        - id: 70000000-0000-4000-8000-000000000002
+          database_id: 10000000-0000-4000-8000-000000000001
+          migration_id: 20000000-0000-4000-8000-000000000002
+          migration_revision: 1
+          checksum: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          change_request_id: 50000000-0000-4000-8000-000000000002
+          job_id: 60000000-0000-4000-8000-000000000002
+          operation: apply
+          direction: up
+          status: committed
+          reverts_execution_id: null
+          forward_of_execution_id: null
+          actor_id: 30000000-0000-4000-8000-000000000003
+          actor: contract-editor
+          started_at: '2026-11-10T10:02:00Z'
+          committed_at: '2026-11-10T10:02:01Z'
+          position_version: 2
+        - id: 70000000-0000-4000-8000-000000000001
+          database_id: 10000000-0000-4000-8000-000000000001
+          migration_id: 20000000-0000-4000-8000-000000000001
+          migration_revision: 1
+          checksum: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          change_request_id: 50000000-0000-4000-8000-000000000001
+          job_id: 60000000-0000-4000-8000-000000000001
+          operation: apply
+          direction: up
+          status: committed
+          reverts_execution_id: null
+          forward_of_execution_id: null
+          actor_id: 30000000-0000-4000-8000-000000000003
+          actor: contract-editor
+          started_at: '2026-11-10T10:01:00Z'
+          committed_at: '2026-11-10T10:01:01Z'
+          position_version: 1
+        page: 1
+        limit: 50
+        has_next: false
+    ExecutedStatementsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutedStatement'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        limit:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+        has_next:
+          type: boolean
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      description: Empty items is [], never null. Defaults page=1, limit=50. Stable order documented per endpoint;
+        concurrent writes may shift offset pages.
