@@ -1,8 +1,60 @@
-# JSON API foundation (API-01 / SEC-01)
+# JSON API foundation and authentication (API-01, API-02 / SEC-01)
 
-This package implements K1's transport boundary. Production auth/admin/explorer
-and workflow endpoints are later tasks; no placeholder success routes are mounted.
-With no routes configured, `/api/v1` and its subtree return JSON 404.
+This package implements K1's transport boundary and the authentication endpoints.
+Admin/explorer/workflow endpoints remain separate tasks. No placeholder success
+routes are mounted. Without Auth or custom Routes, the API subtree returns JSON 404.
+
+## Authentication module (API-02)
+
+Enable all three production endpoints with an explicit leadership dependency:
+
+```go
+frontend, err := api.New(api.Config{
+    Security: securityConfig, // M1 AuthService, checked logout, CSRF, cookies, limiter
+    Logger: logger,
+    Auth: &api.AuthConfig{Leaders: leaderDirectory},
+})
+if err != nil { /* fail application startup */ }
+handler := web.NewRouter(logger, frontend)
+```
+
+The integrator (13524044) owns this application wiring. `leaderDirectory` implements
+the consumer-owned `GroupLeadership.LeaderGroups(ctx, userID)` interface. K2's
+LeaderDirectory already includes that method, so no migration-to-API adapter is
+needed. It must query the current active group leadership/membership; do not
+install an always-empty implementation in production to hide missing M2 storage.
+Missing or typed-nil dependencies fail at construction. `Auth:nil` intentionally
+leaves the module disabled for transport-only configurations and their tests.
+Built-in auth paths cannot be replaced by custom Routes, including public HEAD.
+
+| Endpoint | Behavior |
+|---|---|
+| POST /api/v1/auth/login | Origin-protected, JSON <=16 KiB, peer-IP + account throttling, cookie session; no pre-login CSRF token |
+| GET /api/v1/auth/me | Authenticate/rotate session, read current leadership, return K1 AuthMe |
+| POST /api/v1/auth/logout | No query/body, valid Origin + header CSRF, checked session revocation, expired cookie and 204 (no redirect) |
+
+Login and /me use the same explicit SessionResponse DTO: `user` (id, username,
+active, platform_admin), top-level platform_admin, csrf_token and leader_of. Active
+is true because the service verified the account. Username normalization belongs
+to M1; password bytes are never trimmed. Required/size validation is 422, wrong
+credentials/unknown user/disabled account share a generic 401. Leader IDs are
+validated, copied, sorted and deduplicated; no leadership is `[]`, never null.
+Leadership is a UI hint; admin/DB operations still require backend authorization.
+
+A directory failure/invalid result produces a safe 503, never fabricated empty
+leadership. Authentication may already have committed/replaced a session before
+that read. Login therefore sends the committed session cookie even on this later
+503; /me likewise preserves rotated cookies on profile failures. Clients should
+show the temporary error and retry /me, not discard the session or infer success
+from the cookie alone. No response/URL/log exposes a session identifier/password.
+
+Auth events use the injected logger and K5 field names. `auth.login` succeeded
+means the authentication/session operation committed, even if a later profile
+read makes the HTTP response 503. Logout uses the existing checked-revocation
+handler once, avoiding a redundant Authenticate/rotation immediately before
+revocation. Failed login uses actor=anonymous; logout records only the verified
+actor. Log text/error codes exclude raw dependency errors, cookie/CSRF values
+and request bodies. Trace/span fields remain null until TRC instrumentation.
 
 ## Construct and integrate
 
@@ -110,7 +162,10 @@ go test ./... -count=1
 go vet ./...
 ```
 
-Transport integration tests use real auth/session services, CSRF, token encryption,
+Transport and production-auth-route integration tests use real auth/session services, CSRF, token encryption,
 cookie rotation, limiter and backend authorizer with in-memory persistence. They
 are not substitutes for later real-DB API integration tests. The tests' illustrative
-routes are not registered by production API.New. No new Go dependencies are needed.
+routes are not registered by production API.New; Config.Auth registers the actual
+auth endpoints. Tests also cover login replacement, disabled/expired/revoked
+sessions, stale CSRF epochs, directory/storage failures and both rate limits.
+No new Go dependencies are needed.
