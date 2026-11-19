@@ -6,6 +6,11 @@ the routes are implemented or that team approval has happened.
 
 Start here:
 
+The API-01 transport implementation is in
+[`../src/internal/api/`](../src/internal/api/README.md). It supplies JSON parsing,
+errors, routing and security adapters; business endpoints and application wiring
+remain separate tasks. Its README describes constructor/registrar integration.
+
 1. [`openapi.yaml`](openapi.yaml): authoritative HTTP shapes, operation IDs,
    permissions (`x-access`), examples, success and error responses.
 2. [`../docs/contracts/m2.md`](../docs/contracts/m2.md): K2 semantics, transaction

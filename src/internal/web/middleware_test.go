@@ -10,6 +10,21 @@ import (
 	"testing"
 )
 
+func TestRecoveryMiddlewarePreservesAbortHandler(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+	handler := recoveryMiddleware(logger, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }))
+	w := httptest.NewRecorder()
+	defer func() {
+		if failure := recover(); failure != http.ErrAbortHandler {
+			t.Fatalf("expected transport abort, got %v", failure)
+		}
+		if w.Body.Len() != 0 {
+			t.Fatal("recovery appended HTML/text to aborted API response")
+		}
+	}()
+	handler.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+}
+
 func TestMiddlewareStack(t *testing.T) {
 	t.Run("adds request ID and logs request result", func(t *testing.T) {
 		var logs bytes.Buffer

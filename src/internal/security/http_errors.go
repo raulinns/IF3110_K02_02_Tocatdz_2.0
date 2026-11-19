@@ -9,6 +9,12 @@ import (
 
 func HTTPStatus(err error) (int, string) {
 	switch {
+	case errors.Is(err, ErrMalformedRequest):
+		return http.StatusBadRequest, "Permintaan tidak valid"
+	case errors.Is(err, ErrUnsupportedMediaType):
+		return http.StatusUnsupportedMediaType, "Gunakan Content-Type application/json"
+	case errors.Is(err, ErrPayloadTooLarge):
+		return http.StatusRequestEntityTooLarge, "Ukuran permintaan terlalu besar"
 	case errors.Is(err, ErrTargetNotReady):
 		return http.StatusBadRequest, "Koneksi target perlu akun terbatas dan konfigurasi receipt yang sesuai."
 	case errors.Is(err, ErrPasswordTooShort):
