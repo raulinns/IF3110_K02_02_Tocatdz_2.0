@@ -7,13 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
 const requestIDHeader = "X-Request-ID"
 
-const contentSecurityPolicy = "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'"
-
-type requestIDContextKey struct{}
+const contentSecurityPolicy = security.ContentSecurityPolicy
 
 type responseRecorder struct {
 	http.ResponseWriter
@@ -61,11 +61,7 @@ func requestIDMiddleware(
 			return
 		}
 
-		ctx := context.WithValue(
-			r.Context(),
-			requestIDContextKey{},
-			requestID,
-		)
+		ctx := security.WithRequestID(r.Context(), requestID)
 
 		w.Header().Set(requestIDHeader, requestID)
 
@@ -116,8 +112,12 @@ func recoveryMiddleware(
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if recover() == nil {
+			failure := recover()
+			if failure == nil {
 				return
+			}
+			if failure == http.ErrAbortHandler {
+				panic(failure)
 			}
 
 			logger.ErrorContext(
@@ -144,43 +144,7 @@ func recoveryMiddleware(
 }
 
 func securityHeaderMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		headers := w.Header()
-
-		headers.Set(
-			"Content-Security-Policy",
-			contentSecurityPolicy,
-		)
-
-		headers.Set(
-			"Referrer-Policy",
-			"strict-origin-when-cross-origin",
-		)
-
-		headers.Set(
-			"X-Content-Type-Options",
-			"nosniff",
-		)
-		headers.Set(
-			"X-Frame-Options",
-			"DENY",
-		)
-
-		headers.Set(
-			"Permissions-Policy",
-			"camera=(), microphone=(), geolocation=()",
-		)
-		headers.Set(
-			"Cross-Origin-Opener-Policy",
-			"same-origin",
-		)
-		headers.Set(
-			"Cross-Origin-Resource-Policy",
-			"same-origin",
-		)
-
-		next.ServeHTTP(w, r)
-	})
+	return security.SecurityHeaders(next)
 }
 
 func generateRequestID() (string, error) {
@@ -211,9 +175,7 @@ func requestMethod(r *http.Request) string {
 }
 
 func requestIDFromContext(ctx context.Context) string {
-	requestID, _ := ctx.Value(requestIDContextKey{}).(string)
-
-	return requestID
+	return security.RequestIDFromContext(ctx)
 }
 
 func (w *responseRecorder) WriteHeader(statusCode int) {

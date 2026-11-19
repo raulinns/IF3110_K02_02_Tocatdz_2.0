@@ -3,6 +3,9 @@ package security
 import "errors"
 
 var (
+	ErrMalformedRequest        = errors.New("malformed HTTP request")
+	ErrUnsupportedMediaType    = errors.New("unsupported request media type")
+	ErrPayloadTooLarge         = errors.New("request body too large")
 	ErrInvalidInput            = errors.New("invalid input")
 	ErrTargetNotReady          = errors.Join(errors.New("target requires restricted role and protected receipts"), ErrInvalidInput)
 	ErrInvalidCredentials      = errors.New("invalid credentials")

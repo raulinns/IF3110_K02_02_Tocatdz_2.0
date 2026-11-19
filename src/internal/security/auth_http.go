@@ -3,12 +3,20 @@ package security
 import (
 	"context"
 	"errors"
+	"io"
 	"mime"
 	"net"
 	"net/http"
 )
 
 const MaxLoginFormBytes int64 = 16 << 10
+
+type HTTPTransport string
+
+const (
+	HTMLTransport HTTPTransport = "html"
+	JSONTransport HTTPTransport = "json"
+)
 
 type HTTPMiddlewareConfig struct {
 	Auth        Authenticator
@@ -17,6 +25,10 @@ type HTTPMiddlewareConfig struct {
 	Cookies     *SessionCookies
 	Throttle    LoginThrottle
 	ErrorWriter HTTPErrorWriter
+	// Defaults preserve M1 HTML behavior. JSON adapters provide a safe status
+	// mapper (e.g. domain validation -> 422), independently of body rendering.
+	ErrorStatus func(error) int
+	Transport   HTTPTransport
 }
 
 type HTTPMiddleware struct{ deps HTTPMiddlewareConfig }
@@ -31,6 +43,18 @@ func NewHTTPMiddleware(cfg HTTPMiddlewareConfig) (*HTTPMiddleware, error) {
 	}
 	if !cfg.Cookies.configured {
 		return nil, ErrInvalidInput
+	}
+	if cfg.Transport == "" {
+		cfg.Transport = HTMLTransport
+	}
+	if cfg.Transport != HTMLTransport && cfg.Transport != JSONTransport {
+		return nil, ErrInvalidInput
+	}
+	if cfg.Transport == JSONTransport && (cfg.ErrorWriter == nil || cfg.ErrorStatus == nil) {
+		return nil, ErrInvalidInput
+	}
+	if cfg.ErrorStatus == nil {
+		cfg.ErrorStatus = func(err error) int { status, _ := HTTPStatus(err); return status }
 	}
 	if cfg.ErrorWriter == nil {
 		cfg.ErrorWriter = func(w http.ResponseWriter, _ *http.Request, err error) { WriteHTTPError(w, err) }
@@ -73,7 +97,7 @@ func (m *HTTPMiddleware) Protected(next http.Handler) http.Handler {
 		}
 		var check SessionCheck
 		if !SafeMethod(r.Method) {
-			token, err := ReadCSRFToken(w, r)
+			token, err := m.readCSRFToken(w, r)
 			if err != nil {
 				m.writeError(w, r, err)
 				return
@@ -128,14 +152,18 @@ func (m *HTTPMiddleware) LoginProtected(next http.Handler) http.Handler {
 			m.writeError(w, r, err)
 			return
 		}
-		if r.URL.RawQuery != "" || !loginFormType(r) || r.ContentLength > MaxLoginFormBytes || r.PostForm != nil || r.Body == nil {
-			m.writeError(w, r, ErrInvalidInput)
+		if err := m.checkLoginRequest(r); err != nil {
+			m.writeError(w, r, err)
 			return
 		}
 		// RemoteAddr dipakai langsung supaya header proxy dari client tidak bisa mengakali batas percobaan login.
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
-			m.writeError(w, r, ErrInvalidInput)
+			failure := ErrMalformedRequest
+			if m.deps.Transport == HTMLTransport {
+				failure = ErrInvalidInput
+			}
+			m.writeError(w, r, failure)
 			return
 		}
 		if err := m.deps.Throttle.CheckIP(r.Context(), ip); err != nil {
@@ -174,23 +202,51 @@ func (m *HTTPMiddleware) LogoutHandler() http.Handler {
 			return
 		}
 		cookie, err := m.deps.Cookies.Read(r)
+		if m.deps.Transport == JSONTransport {
+			if err != nil {
+				m.rejectAuthentication(w, r, err)
+				return
+			}
+			// Logout must not revoke a session when a forbidden body is supplied.
+			if r.Body != nil {
+				body, bodyErr := io.ReadAll(io.LimitReader(r.Body, 1))
+				if bodyErr != nil || len(body) != 0 {
+					m.writeError(w, r, ErrMalformedRequest)
+					return
+				}
+			}
+		}
 		if err != nil && !errors.Is(err, ErrUnauthenticated) {
 			m.writeError(w, r, err)
 			return
 		}
+		checked := false
 		check := func(ctx context.Context, principal Principal) error {
-			token, err := ReadCSRFToken(w, r)
+			token, err := m.readCSRFToken(w, r)
 			if err != nil {
 				return err
 			}
-			return m.deps.CSRF.VerifyToken(ctx, principal, token)
+			if err := m.deps.CSRF.VerifyToken(ctx, principal, token); err != nil {
+				return err
+			}
+			checked = true
+			return nil
 		}
 		if err := m.deps.Logout.LogoutWithCheck(r.Context(), cookie, check); err != nil {
 			m.writeError(w, r, err)
 			return
 		}
+		if m.deps.Transport == JSONTransport && !checked {
+			// The service skips the callback for missing/expired/revoked sessions.
+			m.rejectAuthentication(w, r, ErrUnauthenticated)
+			return
+		}
 		if err := m.deps.Cookies.Clear(w); err != nil {
 			m.writeError(w, r, err)
+			return
+		}
+		if m.deps.Transport == JSONTransport {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -199,7 +255,10 @@ func (m *HTTPMiddleware) LogoutHandler() http.Handler {
 
 func (m *HTTPMiddleware) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	errorHeaders(w, err)
-	status, _ := HTTPStatus(err)
+	status := m.deps.ErrorStatus(err)
+	if status < 400 || status > 599 {
+		status = http.StatusInternalServerError
+	}
 	response := &errorResponseWriter{ResponseWriter: w, status: status, err: err, allow: w.Header().Get("Allow")}
 	m.deps.ErrorWriter(response, r, err)
 	if !response.wroteHeader {
