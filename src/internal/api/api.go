@@ -1,5 +1,5 @@
-// Package api provides the K1 JSON transport. Business endpoints are added by
-// API-02 onward; this package does not assemble stores or start a server/worker.
+// Package api provides the K1 JSON transport and opt-in authentication routes.
+// It does not assemble stores or start a server/worker.
 package api
 
 import (
@@ -47,6 +47,9 @@ type Config struct {
 	Security security.HTTPMiddlewareConfig
 	Logger   *slog.Logger
 	Routes   []Route
+	// Nil keeps the transport-only configuration. Enabling auth requires a real
+	// leadership dependency; absence must never silently mean "no leader groups".
+	Auth *AuthConfig
 }
 
 type API struct {
@@ -70,12 +73,31 @@ func New(cfg Config) (*API, error) {
 	securityConfig.Transport = security.JSONTransport
 	securityConfig.ErrorWriter = WriteError
 	securityConfig.ErrorStatus = func(err error) int { status, _ := errorDetail(err); return status }
+	var auth *authEndpoints
+	if cfg.Auth != nil {
+		if missingAuthDependency(cfg.Auth.Leaders) {
+			return nil, fmt.Errorf("auth leadership directory is required: %w", security.ErrInvalidInput)
+		}
+		if missingAuthDependency(securityConfig.Logout) {
+			return nil, fmt.Errorf("checked logout service is required: %w", security.ErrInvalidInput)
+		}
+		auth = &authEndpoints{service: securityConfig.Auth, cookies: securityConfig.Cookies, leaders: cfg.Auth.Leaders, logger: cfg.Logger}
+		securityConfig.Logout = &auditedLogout{next: securityConfig.Logout, logger: cfg.Logger}
+	}
 	guards, err := security.NewHTTPMiddleware(securityConfig)
 	if err != nil {
 		return nil, err
 	}
 	a := &API{mux: http.NewServeMux(), guards: guards, logger: cfg.Logger}
+	if auth != nil {
+		if err := a.registerAuth(auth); err != nil {
+			return nil, err
+		}
+	}
 	for _, route := range cfg.Routes {
+		if auth != nil && (route.Path == "/auth/login" || route.Path == "/auth/me" || route.Path == "/auth/logout") {
+			return nil, fmt.Errorf("built-in auth paths cannot be replaced: %w", security.ErrInvalidInput)
+		}
 		if err := a.register(route); err != nil {
 			return nil, err
 		}
@@ -135,6 +157,10 @@ func (a *API) register(route Route) (err error) {
 	case Login:
 		handler = a.guards.LoginProtected(handler)
 	}
+	return a.registerHTTP(route.Method, route.Path, handler)
+}
+
+func (a *API) registerHTTP(method, path string, handler http.Handler) (err error) {
 	// ServeMux reports malformed/conflicting patterns as panics. Turn constructor
 	// errors into ordinary errors; never let invalid setup become a runtime panic.
 	defer func() {
@@ -142,9 +168,9 @@ func (a *API) register(route Route) (err error) {
 			err = fmt.Errorf("conflicting or malformed API pattern: %w", security.ErrInvalidInput)
 		}
 	}()
-	a.mux.Handle(route.Method+" "+Prefix+route.Path, handler)
-	if !slices.Contains(a.methods, route.Method) {
-		a.methods = append(a.methods, route.Method)
+	a.mux.Handle(method+" "+Prefix+path, handler)
+	if !slices.Contains(a.methods, method) {
+		a.methods = append(a.methods, method)
 	}
 	return nil
 }

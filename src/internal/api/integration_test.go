@@ -30,10 +30,13 @@ func (c *integrationClock) Now() time.Time { return c.now }
 // Only persistence and the expensive KDF are faked; session service, token
 // encryption, CSRF, cookies, limiter, middleware and authorization are real.
 type integrationStore struct {
-	mu       sync.Mutex
-	account  security.CredentialRecord
-	sessions map[security.ID]security.Session
-	access   security.DatabaseAccess
+	mu        sync.Mutex
+	account   security.CredentialRecord
+	sessions  map[security.ID]security.Session
+	access    security.DatabaseAccess
+	lookupErr error
+	createErr error
+	revokeErr error
 }
 
 func (s *integrationStore) FindByUsername(_ context.Context, username string) (security.CredentialRecord, error) {
@@ -64,6 +67,9 @@ func (s *integrationStore) Rehash(_ context.Context, id security.ID, expected, r
 func (s *integrationStore) Create(_ context.Context, session security.Session, version uint64, previous *security.TokenDigest, _ security.SessionPolicy) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.createErr != nil {
+		return s.createErr
+	}
 	if !s.account.Account.Active || version != s.account.Account.AuthVersion {
 		return security.ErrConflict
 	}
@@ -83,6 +89,9 @@ func (s *integrationStore) Create(_ context.Context, session security.Session, v
 func (s *integrationStore) Lookup(_ context.Context, digest security.TokenDigest) (security.SessionSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.lookupErr != nil {
+		return security.SessionSnapshot{}, s.lookupErr
+	}
 	for _, session := range s.sessions {
 		if session.CurrentDigest == digest {
 			return security.SessionSnapshot{Session: session, Account: s.account.Account}, nil
@@ -116,6 +125,9 @@ func (s *integrationStore) Advance(_ context.Context, digest security.TokenDiges
 func (s *integrationStore) Revoke(_ context.Context, id security.ID, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.revokeErr != nil {
+		return s.revokeErr
+	}
 	if session, ok := s.sessions[id]; ok {
 		session.RevokedAt = &now
 		session.Revision++
