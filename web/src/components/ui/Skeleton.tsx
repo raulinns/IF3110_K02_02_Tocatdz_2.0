@@ -18,7 +18,7 @@ export function SkeletonRows({ rows = 5 }: { rows?: number }) {
   )
 }
 
-// Kerangka halaman standar: judul + satu box berisi baris placeholder.
+// Kerangka halaman standar: judul dan satu box berisi baris placeholder
 export function PageSkeleton({ rows = 5 }: { rows?: number }) {
   return (
     <div role="status" aria-busy="true">

@@ -1,8 +1,8 @@
 import { createContext, useContext } from 'react'
 
-// Respons GET /api/v1/auth/me.
+// Respons GET /api/v1/auth/me
 export interface Session {
-  user: { id: string; username: string }
+  user: { id: string; username: string; active: boolean; platform_admin: boolean }
   platform_admin: boolean
   csrf_token: string
   leader_of: string[]

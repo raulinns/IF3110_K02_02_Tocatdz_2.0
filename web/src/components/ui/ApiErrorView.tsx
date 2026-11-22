@@ -7,7 +7,7 @@ interface ApiErrorViewProps {
   onRetry?: () => void
 }
 
-// 403/404 tampil sebagai halaman penuh; 401 tidak ditampilkan karena pengguna sedang dialihkan ke login.
+// 403 dan 404 tampil sebagai halaman penuh sedangkan 401 tidak ditampilkan karena pengguna sedang dialihkan ke login
 export function ApiErrorView({ error, onRetry }: ApiErrorViewProps) {
   if (isApiError(error)) {
     if (error.status === 401) return null

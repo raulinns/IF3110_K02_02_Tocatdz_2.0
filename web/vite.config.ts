@@ -1,8 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
-// Dev: proxy /api ke backend Go. Jalankan backend dengan PUBLIC_ORIGIN=http://localhost:5173
-// supaya cek Origin/CSRF lulus (Origin diteruskan apa adanya oleh proxy).
+// Dev: proxy /api ke backend Go yang dijalankan dengan PUBLIC_ORIGIN=http://localhost:5173 supaya cek Origin dan CSRF lulus
 export default defineConfig({
   plugins: [react()],
   server: {

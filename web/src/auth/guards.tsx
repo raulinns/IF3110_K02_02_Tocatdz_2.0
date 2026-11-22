@@ -14,7 +14,7 @@ function FullscreenSkeleton({ rows }: { rows?: number }) {
   )
 }
 
-// Semua route aplikasi (selain /login) lewat sini. Backend tetap memeriksa akses; ini hanya UX.
+// Semua route aplikasi selain /login lewat sini dan pemeriksaan akses yang sebenarnya tetap di backend
 export function RequireAuth() {
   const state = useSession()
   const location = useLocation()
@@ -42,7 +42,7 @@ export function RequireAdmin() {
   return <Outlet />
 }
 
-// Halaman login tidak berguna jika sudah masuk.
+// Halaman login tidak berguna jika sudah masuk
 export function GuestOnly() {
   const state = useSession()
   if (state.status === 'authenticated') return <Navigate to="/databases" replace />

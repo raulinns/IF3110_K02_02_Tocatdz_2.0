@@ -11,7 +11,7 @@ import App from './App.tsx'
 import { isApiError } from './api/errors.ts'
 import { SessionProvider } from './auth/SessionProvider.tsx'
 
-// Hanya gangguan jaringan dan error server yang diulang; 4xx langsung ditampilkan.
+// Hanya gangguan jaringan dan error server yang diulang sedangkan 4xx langsung ditampilkan
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

@@ -5,7 +5,7 @@ export type Theme = 'light' | 'dark'
 const storageKey = 'tocatdz-theme'
 const root = document.documentElement
 
-// Tema awal sudah dipasang oleh public/theme.js sebelum React dimuat; di sini hanya dibaca dan diubah.
+// Tema awal sudah dipasang oleh public/theme.js sebelum React dimuat jadi di sini hanya dibaca dan diubah
 function current(): Theme {
   return root.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light'
 }
@@ -24,7 +24,7 @@ export function useTheme() {
     try {
       window.localStorage.setItem(storageKey, next)
     } catch {
-      // Penyimpanan diblokir browser; tema tetap berlaku sampai halaman dimuat ulang.
+      // Jika penyimpanan diblokir browser tema tetap berlaku sampai halaman dimuat ulang
     }
   }, [])
   return { theme, toggle }
