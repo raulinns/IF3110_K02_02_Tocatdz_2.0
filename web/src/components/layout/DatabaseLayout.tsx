@@ -10,7 +10,7 @@ const tabs = [
   { to: 'history', icon: 'fa-clock-rotate-left', label: 'Riwayat' },
 ]
 
-// Kerangka semua halaman di bawah /databases/:db: breadcrumb, judul, dan tab bagian database.
+// Kerangka semua halaman di bawah /databases/:db: breadcrumb, judul, dan tab bagian database
 export function DatabaseLayout() {
   const { db = '' } = useParams()
   return (

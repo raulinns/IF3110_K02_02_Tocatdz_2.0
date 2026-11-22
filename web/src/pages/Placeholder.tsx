@@ -6,7 +6,7 @@ interface PlaceholderProps {
   bare?: boolean
 }
 
-// Penanda halaman yang belum tersedia.
+// Penanda halaman yang belum tersedia
 export function Placeholder({ title, bare = false }: PlaceholderProps) {
   return (
     <>

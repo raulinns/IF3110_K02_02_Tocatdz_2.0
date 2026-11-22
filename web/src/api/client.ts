@@ -9,20 +9,20 @@ export type Query = Record<string, string | number | boolean | null | undefined>
 export interface RequestOptions {
   query?: Query
   signal?: AbortSignal
-  // false untuk request yang 401-nya bagian dari alur normal (cek sesi, login).
+  // false untuk request yang 401-nya bagian dari alur normal seperti cek sesi dan login
   handleUnauthenticated?: boolean
 }
 
 export interface ClientHooks {
   csrfToken: string | null
   onUnauthenticated?: () => void
-  // Mengambil token CSRF terbaru (misalnya setelah sesi dirotasi); null jika sesi sudah tidak ada.
+  // Mengambil token CSRF terbaru dan mengembalikan null jika sesi sudah tidak ada
   refreshCsrf?: () => Promise<string | null>
 }
 
 const mutating = new Set<Method>(['POST', 'PUT', 'PATCH', 'DELETE'])
 
-// Setiap segmen path di-encode supaya nama schema/tabel dengan karakter khusus tetap aman.
+// Setiap segmen path di-encode supaya nama schema dan tabel dengan karakter khusus tetap aman
 export function path(strings: TemplateStringsArray, ...values: (string | number)[]): string {
   return strings.reduce((out, part, i) => out + part + (i < values.length ? encodeURIComponent(String(values[i])) : ''), '')
 }
@@ -48,7 +48,7 @@ async function parseBody<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-// Klien JSON untuk /api/v1: cookie sesi same-origin, header X-CSRF-Token untuk mutasi, dan error dalam bentuk ApiError.
+// Klien JSON untuk /api/v1: cookie sesi same-origin, header X-CSRF-Token untuk mutasi, dan error dalam bentuk ApiError
 export class ApiClient {
   private hooks: ClientHooks = { csrfToken: null }
   private readonly fetcher: typeof fetch
@@ -85,7 +85,7 @@ export class ApiClient {
     let res = await this.send(method, target, body, options)
     if (!res.ok && res.status === 403 && mutating.has(method) && this.hooks.refreshCsrf) {
       const err = await toApiError(res.clone())
-      // Token CSRF bisa basi setelah rotasi sesi; ambil yang baru lalu ulangi sekali saja.
+      // Token CSRF bisa basi setelah rotasi sesi jadi ambil yang baru lalu ulangi sekali saja
       if (err.code === 'csrf_failed') {
         const token = await this.hooks.refreshCsrf()
         if (!token) {
@@ -115,7 +115,7 @@ export class ApiClient {
         signal: options.signal,
       })
     } catch (err) {
-      // Pembatalan dilempar ulang apa adanya supaya TanStack Query mengenalinya.
+      // Pembatalan dilempar ulang apa adanya supaya TanStack Query mengenalinya
       if (isAbort(err, options.signal)) throw err
       throw new ApiError({ status: 0, code: 'network', message: '' })
     }

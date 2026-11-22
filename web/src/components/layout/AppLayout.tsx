@@ -5,7 +5,7 @@ import { useMediaQuery } from '../../lib/useMediaQuery.ts'
 import { Sidebar } from './Sidebar.tsx'
 import { Topbar } from './Topbar.tsx'
 
-// Breakpoint sama dengan @media di app.css: di bawahnya sidebar menjadi offcanvas (default tertutup).
+// Breakpoint sama dengan @media di app.css: di bawahnya sidebar menjadi offcanvas dan default tertutup
 const mobileQuery = '(max-width: 768px)'
 
 export function AppLayout() {
@@ -15,7 +15,7 @@ export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const open = mobile ? mobileOpen : !desktopCollapsed
-  // Di desktop `.toggled` menyembunyikan sidebar; di mobile `.toggled` menampilkannya (lihat app.css).
+  // Di desktop `.toggled` menyembunyikan sidebar sedangkan di mobile `.toggled` menampilkannya
   const toggled = mobile ? mobileOpen : desktopCollapsed
   const offcanvas = mobile && mobileOpen
 
