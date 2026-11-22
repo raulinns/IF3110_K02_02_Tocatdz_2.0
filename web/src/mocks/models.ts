@@ -1,5 +1,28 @@
 import type { Schemas } from '../api/types.ts'
-import { getState, type Engine, type MockConnection, type MockGroup, type MockSession, type MockUser } from './state.ts'
+import { getState, type Engine, type MockConnection, type MockExecution, type MockGroup, type MockJob, type MockMigration, type MockSession, type MockUser } from './state.ts'
+
+function omit<T extends object, K extends keyof T>(value: T, keys: K[]): Omit<T, K> {
+  const copy = { ...value }
+  for (const key of keys) delete copy[key]
+  return copy
+}
+
+// Ringkasan daftar tidak memuat badan SQL dan field internal simulasi tidak pernah keluar lewat API
+export function toMigrationSummary(migration: MockMigration): Schemas['MigrationSummary'] {
+  return omit(migration, ['up_sql', 'down_sql', 'irreversible_reason', 'batch'])
+}
+
+export function toJob(job: MockJob): Schemas['Job'] {
+  return omit(job, ['attempts', 'plan', 'ticks', 'resolved'])
+}
+
+export function toExecution(execution: MockExecution): Schemas['Execution'] {
+  return omit(execution, ['statements'])
+}
+
+export function toExecutionSummary(execution: MockExecution): Schemas['ExecutionSummary'] {
+  return omit(execution, ['statements', 'sql_snapshot'])
+}
 
 export function toUser(user: MockUser): Schemas['User'] {
   return { id: user.id, username: user.username, active: user.active, platform_admin: user.platform_admin }
