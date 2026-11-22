@@ -6,19 +6,19 @@ import { SessionContext, type Session, type SessionState } from './session-conte
 
 const sessionKey = ['session']
 
-// Mode dev tanpa backend: `VITE_FAKE_SESSION=admin|user npm run dev`.
+// Mode dev tanpa backend: `VITE_FAKE_SESSION=admin|user npm run dev`
 function fakeSession(): Session | null {
   const kind = import.meta.env.DEV ? import.meta.env.VITE_FAKE_SESSION : undefined
   if (kind !== 'admin' && kind !== 'user') return null
   return {
-    user: { id: '00000000-0000-4000-8000-000000000001', username: kind === 'admin' ? 'admin' : 'pengamat' },
+    user: { id: '00000000-0000-4000-8000-000000000001', username: kind === 'admin' ? 'admin' : 'pengamat', active: true, platform_admin: kind === 'admin' },
     platform_admin: kind === 'admin',
     csrf_token: 'fake',
     leader_of: [],
   }
 }
 
-// 401 pada /auth/me berarti belum masuk, bukan error.
+// 401 pada /auth/me berarti belum masuk dan bukan error
 async function fetchSession(): Promise<Session | null> {
   const fake = fakeSession()
   if (fake) return fake
@@ -30,7 +30,7 @@ async function fetchSession(): Promise<Session | null> {
   }
 }
 
-// Sesi berakhir: buang semua data cache selain sesi, lalu guard route mengalihkan ke /login.
+// Sesi berakhir: buang semua data cache selain sesi lalu guard route mengalihkan ke /login
 function endSession(client: QueryClient) {
   client.setQueryData(sessionKey, null)
   client.removeQueries({ predicate: (query) => query.queryKey[0] !== sessionKey[0] })
@@ -57,7 +57,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       if (!fakeSession()) await api.post('/auth/logout', undefined, { handleUnauthenticated: false })
     } catch (err) {
-      // Sesi yang sudah tidak berlaku di server tetap dianggap keluar.
+      // Sesi yang sudah tidak berlaku di server tetap dianggap keluar
       if (!isApiError(err) || err.status !== 401) throw err
     }
     endSession(client)
