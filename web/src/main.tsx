@@ -22,14 +22,24 @@ const queryClient = new QueryClient({
   },
 })
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <SessionProvider>
-          <App />
-        </SessionProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
-  </StrictMode>,
-)
+// Mode mock menyalakan API palsu lebih dulu dan blok ini dibuang dari build produksi
+async function enableMocking() {
+  if (import.meta.env.MODE === 'mock') {
+    const { startMocking } = await import('./mocks/browser.ts')
+    await startMocking()
+  }
+}
+
+void enableMocking().then(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <SessionProvider>
+            <App />
+          </SessionProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+})
