@@ -1,27 +1,12 @@
 import type { Schemas } from '../api/types.ts'
+import { ids } from './ids.ts'
 import type { MockState, MockTable } from './state.ts'
+import { workflowSeed } from './seed-workflow.ts'
+
+export { ids }
 
 // Semua akun demo memakai password yang sama
 export const demoPassword = 'tocatdz-demo-2026'
-
-const uuid = (kind: number, n: number) => `${kind}0000000-0000-4000-8000-${String(n).padStart(12, '0')}`
-
-export const ids = {
-  reviewer: uuid(3, 1),
-  observer: uuid(3, 2),
-  editor: uuid(3, 3),
-  admin: uuid(3, 4),
-  auditor: uuid(3, 5),
-  pengamat: uuid(3, 6),
-  nonaktif: uuid(3, 7),
-  writers: uuid(4, 1),
-  readers: uuid(4, 2),
-  auditors: uuid(4, 3),
-  magang: uuid(4, 4),
-  inventaris: uuid(1, 1),
-  pelaporan: uuid(1, 2),
-  arsip: uuid(1, 3),
-} as const
 
 type Row = (string | null)[]
 type ColumnSpec = [name: string, type: string, nullable?: boolean, fallback?: string | null]
@@ -244,6 +229,7 @@ export function createSeed(): MockState {
       { group_id: ids.readers, database_id: ids.arsip, access: 'view_only' },
     ],
     tables: [...inventarisTables(), ...pelaporanTables(), ...arsipTables()],
+    ...workflowSeed(),
     session: null,
     loginFailures: 0,
     lockedUntil: 0,

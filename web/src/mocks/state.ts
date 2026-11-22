@@ -48,12 +48,46 @@ export interface MockSession {
   csrfToken: string
 }
 
+export type MockMigration = Schemas['Migration']
+export type MockChangeRequest = Schemas['ChangeRequest']
+
+// Skenario hasil job dipilih dari komentar SQL seperti -- mock:fail agar setiap status akhir bisa dicoba tanpa backend
+export type Scenario = 'ok' | 'fail' | 'retry' | 'partial' | 'uncertain'
+
+export interface JobPlan {
+  direction: Schemas['Direction']
+  sql: string
+  scenario: Scenario
+  batches: number[]
+  done: number
+  totalKnown: boolean
+  compensate: boolean
+  resume: boolean
+  uncertainAt: number | null
+}
+
+export type MockJob = Schemas['Job'] & {
+  attempts: Schemas['JobAttempt'][]
+  plan: JobPlan
+  ticks: number
+  resolved: boolean
+}
+
+export type MockExecution = Schemas['Execution'] & {
+  statements: Schemas['ExecutedStatement'][]
+}
+
 export interface MockState {
   users: MockUser[]
   groups: MockGroup[]
   connections: MockConnection[]
   grants: MockGrant[]
   tables: MockTable[]
+  migrations: MockMigration[]
+  changeRequests: MockChangeRequest[]
+  jobs: MockJob[]
+  executions: MockExecution[]
+  positionVersions: Record<string, number>
   session: MockSession | null
   loginFailures: number
   lockedUntil: number
@@ -102,7 +136,19 @@ export function getState(): MockState {
 // Mengembalikan semua data ke kondisi awal, dipakai antar test
 export function resetState() {
   writeStoredSession(null)
+  setClock(null)
   state = freshState()
+}
+
+let clock: () => Date = () => new Date()
+
+// Jam bisa diganti di test supaya waktu pada job dan riwayat deterministik
+export function setClock(next: (() => Date) | null) {
+  clock = next ?? (() => new Date())
+}
+
+export function now(): string {
+  return clock().toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
 export function setSession(session: MockSession | null) {

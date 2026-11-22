@@ -117,13 +117,16 @@ export function secured(resolver: (ctx: Context) => Response | Promise<Response>
     })
 }
 
-// Parameter path berakhiran _id harus berupa UUID huruf kecil yang tidak nol
+// UUID huruf kecil yang tidak nol
+export const isUuid = (value: string) => uuidPattern.test(value) && !/^[0-]+$/.test(value)
+
+// Parameter path berakhiran _id harus berupa UUID
 function pathParams(raw: ResolverInfo['params']): Record<string, string> {
   const params: Record<string, string> = {}
   for (const [key, value] of Object.entries(raw)) {
     const text = Array.isArray(value) ? value[0] : value
     if (typeof text !== 'string') throw badRequest()
-    if (key.endsWith('_id') && (!uuidPattern.test(text) || /^[0-]+$/.test(text))) throw badRequest()
+    if (key.endsWith('_id') && !isUuid(text)) throw badRequest()
     params[key] = text
   }
   return params
@@ -144,8 +147,9 @@ export interface Paging {
   limit: number
 }
 
-export function readPaging(url: URL): Paging {
-  const query = readQuery(url, pagingKeys)
+// Query tambahan seperti status yang sah untuk endpoint tersebut diteruskan lewat extra
+export function readPaging(url: URL, extra: readonly string[] = []): Paging {
+  const query = readQuery(url, [...pagingKeys, ...extra])
   const read = (key: string, fallback: number) => {
     const raw = query.get(key)
     if (raw === null) return fallback
@@ -174,7 +178,7 @@ export function sortBy<T>(...keys: ((item: T) => string)[]): (a: T, b: T) => num
   }
 }
 
-type JsonObject = Record<string, unknown>
+export type JsonObject = Record<string, unknown>
 
 // Body harus JSON object tunggal dengan Content-Type yang benar dan tanpa field asing
 export async function readJson(request: Request, allowed: readonly string[]): Promise<JsonObject> {
@@ -202,6 +206,13 @@ export function stringField(body: JsonObject, key: string): string | undefined {
   const value = body[key]
   if (value === undefined) return undefined
   if (typeof value !== 'string') throw badRequest()
+  return value
+}
+
+export function numberField(body: JsonObject, key: string): number | undefined {
+  const value = body[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw badRequest()
   return value
 }
 

@@ -1,18 +1,12 @@
 import { http } from 'msw/http'
 import type { Schemas } from '../../api/types.ts'
-import { badRequest, forbidden, notFound, ok, pageOf, pagingKeys, readPaging, route, secured, sortBy, utf8Length, type Context } from '../http.ts'
+import { authorizedConnection } from '../access.ts'
+import { badRequest, notFound, ok, pageOf, pagingKeys, readPaging, route, secured, sortBy, utf8Length, type Context } from '../http.ts'
 import { capabilities } from '../models.ts'
 import { accessFor, getState, type MockConnection, type MockTable } from '../state.ts'
 
 const maxCellLength = 4096
 const maxIdentifierBytes = 63
-
-// Tanpa akses efektif hasilnya forbidden, termasuk untuk database yang tidak ada supaya keberadaannya tidak bocor
-function authorizedConnection({ params, user }: Context): MockConnection {
-  const connection = getState().connections.find((candidate) => candidate.id === params.database_id)
-  if (!connection || !accessFor(user.id, connection.id)) throw forbidden()
-  return connection
-}
 
 function findTable({ params }: Context, connection: MockConnection): MockTable {
   if (utf8Length(params.schema) > maxIdentifierBytes || utf8Length(params.table) > maxIdentifierBytes) throw badRequest()
