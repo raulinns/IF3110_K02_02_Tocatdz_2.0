@@ -74,24 +74,63 @@ describe('ApiClient', () => {
   })
 
   it('membaca envelope error termasuk fields validasi', async () => {
-    const { client } = setup(json(422, errorBody('validation_failed', 'Isian tidak valid', { fields: { title: 'Wajib diisi' } })))
+    const { client } = setup(json(422, errorBody('validation_failed', 'Isian tidak valid', { fields: { title: ['Wajib diisi'] } })))
     const err = await caught(client.post('/x', {}))
     expect(err.status).toBe(422)
     expect(err.code).toBe('validation_failed')
     expect(err.message).toBe('Isian tidak valid')
     expect(err.requestId).toBe('req-1')
-    expect(err.fields).toEqual({ title: 'Wajib diisi' })
+    expect(err.fields).toEqual({ title: ['Wajib diisi'] })
   })
 
-  it('menormalkan fields berbentuk daftar', async () => {
-    const { client } = setup(json(422, errorBody('validation_failed', '', { fields: [{ field: 'down_sql', message: 'Wajib' }] })))
-    expect((await caught(client.post('/x', {}))).fields).toEqual({ down_sql: 'Wajib' })
+  it('mempertahankan banyak pesan per field dan mengabaikan bentuk lain', async () => {
+    const fields = { up_sql: ['a', 'b'], down_sql: 'bukan daftar', 'batch.key_column': [1, 'valid'], kosong: [] }
+    const { client } = setup(json(422, errorBody('validation_failed', '', { fields })))
+    expect((await caught(client.post('/x', {}))).fields).toEqual({ up_sql: ['a', 'b'], 'batch.key_column': ['valid'] })
   })
 
-  it('409 menjadi conflict', async () => {
-    const { client } = setup(json(409, errorBody('conflict', 'Revision berubah')))
+  it('kunci __proto__ pada fields tidak mengubah prototype', async () => {
+    const raw = '{"error":{"code":"validation_failed","message":"","request_id":"r","fields":{"__proto__":["x"]}}}'
+    const { client } = setup(new Response(raw, { status: 422, headers: { 'Content-Type': 'application/json' } }))
+    const err = await caught(client.post('/x', {}))
+    expect(Object.getPrototypeOf(err.fields)).toBe(Object.prototype)
+    expect(Object.hasOwn(err.fields, '__proto__')).toBe(true)
+  })
+
+  it('409 menjadi conflict dan membawa reason', async () => {
+    const { client } = setup(json(409, errorBody('conflict', 'Revision berubah', { reason: 'revision_mismatch' })))
     const err = await caught(client.patch('/x', {}))
     expect(err.code).toBe('conflict')
+    expect(err.reason).toBe('revision_mismatch')
+  })
+
+  it('reason kosong jika server tidak mengirimnya', async () => {
+    const { client } = setup(json(404, errorBody('not_found')))
+    expect((await caught(client.get('/x'))).reason).toBeUndefined()
+  })
+
+  it.each([
+    [400, 'bad_request'],
+    [405, 'method_not_allowed'],
+    [413, 'payload_too_large'],
+    [415, 'unsupported_media_type'],
+    [422, 'result_too_large'],
+    [503, 'unavailable'],
+  ] as const)('status %i dengan kode %s dikenali', async (status, code) => {
+    const { client } = setup(json(status, errorBody(code)))
+    expect((await caught(client.get('/x'))).code).toBe(code)
+  })
+
+  it.each([
+    [400, 'bad_request'],
+    [405, 'method_not_allowed'],
+    [413, 'payload_too_large'],
+    [415, 'unsupported_media_type'],
+    [503, 'unavailable'],
+    [500, 'internal'],
+  ] as const)('status %i tanpa envelope menjadi %s', async (status, code) => {
+    const { client } = setup(new Response('gagal', { status, headers: { 'Content-Type': 'text/plain' } }))
+    expect((await caught(client.get('/x'))).code).toBe(code)
   })
 
   it('401 memanggil onUnauthenticated', async () => {
