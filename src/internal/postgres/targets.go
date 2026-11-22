@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
@@ -531,9 +532,23 @@ type targetTx struct {
 // SQL migration dikirim tanpa parameter sehingga pgx memakai simple protocol dan beberapa statement bisa jalan dalam satu transaksi.
 func (t *targetTx) Execute(ctx context.Context, sql security.Secret) error {
 	if _, err := t.tx.Exec(ctx, sql.Reveal()); err != nil {
-		return errors.New("migration statement failed")
+		return statementFailure(err)
 	}
 	return nil
+}
+
+// StatementError hanya membawa SQLSTATE, tanpa pesan driver.
+type StatementError struct{ State string }
+
+func (e StatementError) Error() string    { return "migration statement failed" }
+func (e StatementError) SQLState() string { return e.State }
+
+func statementFailure(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && len(pgErr.Code) == 5 {
+		return StatementError{State: pgErr.Code}
+	}
+	return StatementError{}
 }
 
 func (t *targetTx) WriteReceipt(ctx context.Context, receipt migration.Receipt) error {

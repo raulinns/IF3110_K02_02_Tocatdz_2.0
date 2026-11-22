@@ -225,6 +225,9 @@ func prepareTarget(ctx context.Context, adminDSN security.Secret, box *SecretBox
 			}
 		}
 	}
+	if err := ensureBatchSupport(ctx, tx, owner, runtime); err != nil {
+		return security.Secret{}, err
+	}
 	for _, sql := range []string{"REVOKE ALL ON ALL TABLES IN SCHEMA tocatdz_internal FROM PUBLIC," + pgx.Identifier{runtime}.Sanitize(), "REVOKE ALL ON SCHEMA tocatdz_internal FROM PUBLIC," + pgx.Identifier{runtime}.Sanitize(), "GRANT USAGE ON SCHEMA tocatdz_internal TO " + pgx.Identifier{runtime}.Sanitize()} {
 		if _, err := tx.Exec(ctx, sql); err != nil {
 			return security.Secret{}, security.ErrUnavailable
