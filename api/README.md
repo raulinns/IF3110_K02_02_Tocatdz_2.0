@@ -6,10 +6,11 @@ the routes are implemented or that team approval has happened.
 
 Start here:
 
-The API-01 transport implementation is in
+The API-01 transport and API-02 auth implementation is in
 [`../src/internal/api/`](../src/internal/api/README.md). It supplies JSON parsing,
-errors, routing and security adapters; business endpoints and application wiring
-remain separate tasks. Its README describes constructor/registrar integration.
+errors, routing and security adapters, plus opt-in login/me/logout routes.
+Admin/explorer/workflow endpoints and application wiring remain separate tasks.
+Its README describes constructor/registrar integration and the required leader directory.
 
 1. [`openapi.yaml`](openapi.yaml): authoritative HTTP shapes, operation IDs,
    permissions (`x-access`), examples, success and error responses.

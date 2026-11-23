@@ -207,6 +207,14 @@ func (m *HTTPMiddleware) LogoutHandler() http.Handler {
 				m.rejectAuthentication(w, r, err)
 				return
 			}
+			if r.URL.RawQuery != "" {
+				if _, err := ReadCSRFHeaderToken(r); err != nil {
+					m.writeError(w, r, err)
+					return
+				}
+				m.writeError(w, r, ErrMalformedRequest)
+				return
+			}
 			// Logout must not revoke a session when a forbidden body is supplied.
 			if r.Body != nil {
 				body, bodyErr := io.ReadAll(io.LimitReader(r.Body, 1))
