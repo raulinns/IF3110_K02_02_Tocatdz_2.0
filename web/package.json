@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:api": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts"
+    "gen:api": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts",
+    "build:embed": "npm run build && node scripts/embed.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",
