@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, type ReactNode } from 'react'
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client.ts'
 import { isApiError } from '../api/errors.ts'
+import { endSession, sessionKey } from './session-cache.ts'
 import { SessionContext, type Session, type SessionState } from './session-context.ts'
-
-const sessionKey = ['session']
 
 // 401 pada /auth/me berarti belum masuk dan bukan error
 async function fetchSession(): Promise<Session | null> {
@@ -14,12 +13,6 @@ async function fetchSession(): Promise<Session | null> {
     if (isApiError(err) && err.status === 401) return null
     throw err
   }
-}
-
-// Sesi berakhir: buang semua data cache selain sesi lalu guard route mengalihkan ke /login
-function endSession(client: QueryClient) {
-  client.setQueryData(sessionKey, null)
-  client.removeQueries({ predicate: (query) => query.queryKey[0] !== sessionKey[0] })
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
