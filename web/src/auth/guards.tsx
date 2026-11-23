@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { ApiErrorView } from '../components/ui/ApiErrorView.tsx'
 import { ErrorPage } from '../components/ui/ErrorPage.tsx'
 import { PageSkeleton } from '../components/ui/Skeleton.tsx'
+import { safeRedirectPath } from '../lib/redirect.ts'
 import { useSession } from './session-context.ts'
 
 function FullscreenSkeleton({ rows }: { rows?: number }) {
@@ -42,10 +43,11 @@ export function RequireAdmin() {
   return <Outlet />
 }
 
-// Halaman login tidak berguna jika sudah masuk
+// Halaman login tidak berguna jika sudah masuk jadi pengguna dikembalikan ke halaman yang tadi dituju
 export function GuestOnly() {
   const state = useSession()
-  if (state.status === 'authenticated') return <Navigate to="/databases" replace />
+  const location = useLocation()
+  if (state.status === 'authenticated') return <Navigate to={safeRedirectPath((location.state as { from?: unknown } | null)?.from)} replace />
   if (state.status === 'loading') return <FullscreenSkeleton rows={3} />
   return <Outlet />
 }
