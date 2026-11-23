@@ -37,9 +37,12 @@ func TestPermissionMatrix(t *testing.T) {
 	readActions := []security.DatabaseAction{
 		security.ActionViewSchema, security.ActionViewData,
 		security.ActionViewHistory, security.ActionViewMigration,
+		security.ActionViewJob,
 	}
 	writeActions := []security.DatabaseAction{
 		security.ActionCreateMigration, security.ActionUpdateMigration, security.ActionExecuteMigration, security.ActionAnalyzeMigration,
+		security.ActionSubmitMigration, security.ActionRollbackMigration, security.ActionForwardMigration,
+		security.ActionResumeMigration, security.ActionRevertBatches, security.ActionRetryJob,
 	}
 	for _, access := range []security.DatabaseAccess{security.AccessNone, security.AccessViewOnly, security.AccessViewEdit, "admin", ""} {
 		for _, action := range append(append([]security.DatabaseAction{}, readActions...), writeActions...) {
@@ -53,7 +56,7 @@ func TestPermissionMatrix(t *testing.T) {
 				t.Errorf("Allows(%q, %q) = %v; want %v", access, action, got, want)
 			}
 		}
-		for _, action := range []security.DatabaseAction{"", "admin", "migration.delete", "database.drop"} {
+		for _, action := range []security.DatabaseAction{"", "admin", "migration.delete", "database.drop", security.ActionApproveMigration} {
 			if security.Allows(access, action) {
 				t.Errorf("unknown action %q allowed for %q", action, access)
 			}
