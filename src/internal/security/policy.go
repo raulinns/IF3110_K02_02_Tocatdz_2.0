@@ -15,14 +15,24 @@ const (
 type DatabaseAction string
 
 const (
-	ActionViewSchema       DatabaseAction = "schema.view"
-	ActionViewData         DatabaseAction = "data.view"
-	ActionViewHistory      DatabaseAction = "migration.history.view"
-	ActionViewMigration    DatabaseAction = "migration.view"
-	ActionCreateMigration  DatabaseAction = "migration.create"
-	ActionUpdateMigration  DatabaseAction = "migration.update"
-	ActionExecuteMigration DatabaseAction = "migration.execute"
-	ActionAnalyzeMigration DatabaseAction = "migration.analyze"
+	ActionViewSchema        DatabaseAction = "schema.view"
+	ActionViewData          DatabaseAction = "data.view"
+	ActionViewHistory       DatabaseAction = "migration.history.view"
+	ActionViewMigration     DatabaseAction = "migration.view"
+	ActionCreateMigration   DatabaseAction = "migration.create"
+	ActionUpdateMigration   DatabaseAction = "migration.update"
+	ActionExecuteMigration  DatabaseAction = "migration.execute"
+	ActionAnalyzeMigration  DatabaseAction = "migration.analyze"
+	ActionSubmitMigration   DatabaseAction = "migration.submit"
+	ActionRollbackMigration DatabaseAction = "migration.rollback"
+	ActionForwardMigration  DatabaseAction = "migration.forward"
+	ActionResumeMigration   DatabaseAction = "migration.resume"
+	ActionRevertBatches     DatabaseAction = "migration.revert_batches"
+	ActionViewJob           DatabaseAction = "job.view"
+	ActionRetryJob          DatabaseAction = "job.retry"
+	// Approval requires current leadership of the required group. A database
+	// grant alone must never authorize this action through Allows.
+	ActionApproveMigration DatabaseAction = "migration.approve"
 )
 
 func EffectiveAccess(grants []DatabaseAccess) (DatabaseAccess, error) {
@@ -48,9 +58,11 @@ func Allows(access DatabaseAccess, action DatabaseAction) bool {
 		return false
 	}
 	switch action {
-	case ActionViewSchema, ActionViewData, ActionViewHistory, ActionViewMigration:
+	case ActionViewSchema, ActionViewData, ActionViewHistory, ActionViewMigration, ActionViewJob:
 		return true
-	case ActionCreateMigration, ActionUpdateMigration, ActionExecuteMigration, ActionAnalyzeMigration:
+	case ActionCreateMigration, ActionUpdateMigration, ActionExecuteMigration, ActionAnalyzeMigration,
+		ActionSubmitMigration, ActionRollbackMigration, ActionForwardMigration, ActionResumeMigration,
+		ActionRevertBatches, ActionRetryJob:
 		return access == AccessViewEdit
 	default:
 		return false
