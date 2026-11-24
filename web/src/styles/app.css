@@ -472,6 +472,17 @@ a {
 	margin-right: 0;
 }
 
+/* Ikon di tombol yang labelnya disembunyikan di layar kecil tidak butuh jarak */
+.btn .fas:has(+ .d-none.d-md-inline) {
+	margin-right: 0;
+}
+
+@media (min-width: 768px) {
+	.btn .fas:has(+ .d-none.d-md-inline) {
+		margin-right: .35rem;
+	}
+}
+
 .btn-primary {
 	--bs-btn-color: var(--accent-text);
 	--bs-btn-bg: var(--accent);
@@ -693,6 +704,14 @@ a {
 	--bs-alert-bg: var(--danger-bg);
 	--bs-alert-border-color: var(--danger);
 	border-left-width: 4px;
+}
+
+.alert-success,
+.notice-success {
+	--bs-alert-color: var(--text);
+	--bs-alert-bg: var(--field);
+	--bs-alert-border-color: var(--border-strong);
+	border-left: 4px solid var(--success);
 }
 
 .alert-info {
@@ -943,6 +962,11 @@ a {
 .modal-header,
 .modal-footer {
 	border-color: var(--border);
+}
+
+/* Halaman di belakang dialog tidak ikut tergulir */
+body.modal-open {
+	overflow: hidden;
 }
 
 [data-bs-theme="dark"] .btn-close {
