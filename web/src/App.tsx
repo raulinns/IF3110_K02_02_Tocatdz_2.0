@@ -4,6 +4,8 @@ import { AdminLayout } from './components/layout/AdminLayout.tsx'
 import { AppLayout } from './components/layout/AppLayout.tsx'
 import { DatabaseLayout } from './components/layout/DatabaseLayout.tsx'
 import { ErrorPage } from './components/ui/ErrorPage.tsx'
+import { ConnectionsPage } from './pages/admin/ConnectionsPage.tsx'
+import { UsersPage } from './pages/admin/UsersPage.tsx'
 import { DatabasesPage } from './pages/databases/DatabasesPage.tsx'
 import { RowsPage } from './pages/databases/RowsPage.tsx'
 import { SchemaPage } from './pages/databases/SchemaPage.tsx'
@@ -38,9 +40,9 @@ export default function App() {
           <Route element={<RequireAdmin />}>
             <Route path="admin" element={<AdminLayout />}>
               <Route index element={<Navigate to="users" replace />} />
-              <Route path="users" element={<Placeholder bare title="User" />} />
+              <Route path="users" element={<UsersPage />} />
               <Route path="groups" element={<Placeholder bare title="Group" />} />
-              <Route path="connections" element={<Placeholder bare title="Koneksi" />} />
+              <Route path="connections" element={<ConnectionsPage />} />
               <Route path="grants" element={<Placeholder bare title="Akses" />} />
             </Route>
           </Route>

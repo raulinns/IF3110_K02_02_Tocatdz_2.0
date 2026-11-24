@@ -1,14 +1,14 @@
-import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { defaultRowLimit, rowLimits, rowsQuery } from '../../api/explorer.ts'
 import type { Schemas } from '../../api/types.ts'
 import { ApiErrorView } from '../../components/ui/ApiErrorView.tsx'
 import { Breadcrumbs } from '../../components/ui/Breadcrumbs.tsx'
+import { Pager } from '../../components/ui/Pager.tsx'
 import { BoxSkeleton } from '../../components/ui/Skeleton.tsx'
+import { positiveInteger, readPage } from '../../lib/pagination.ts'
 import { schemaPath, tablePath } from '../../lib/paths.ts'
 
-const positiveInteger = (value: string | null) => (value !== null && /^[1-9][0-9]{0,6}$/.test(value) ? Number(value) : undefined)
 const isRowLimit = (value: number | undefined): value is (typeof rowLimits)[number] => rowLimits.some((limit) => limit === value)
 
 // Halaman pertama dan jumlah baris bawaan tidak ditulis ke URL supaya tautannya tetap pendek
@@ -32,30 +32,10 @@ function CellValue({ cell }: { cell: Schemas['Cell'] }) {
   )
 }
 
-interface PageButtonProps {
-  to: string | null
-  children: ReactNode
-}
-
-function PageButton({ to, children }: PageButtonProps) {
-  if (to === null) {
-    return (
-      <button type="button" className="btn btn-sm btn-light" disabled>
-        {children}
-      </button>
-    )
-  }
-  return (
-    <Link className="btn btn-sm btn-light" to={{ search: to }}>
-      {children}
-    </Link>
-  )
-}
-
 export function RowsPage() {
   const { db = '', schema = '', table = '' } = useParams()
   const [params, setParams] = useSearchParams()
-  const page = positiveInteger(params.get('page')) ?? 1
+  const page = readPage(params)
   const requestedLimit = positiveInteger(params.get('limit'))
   const limit = isRowLimit(requestedLimit) ? requestedLimit : defaultRowLimit
   const query = useQuery(rowsQuery(db, schema, table, page, limit))
@@ -134,23 +114,7 @@ export function RowsPage() {
               </div>
             )}
           </div>
-          <nav className="pagination-bar" aria-label="Halaman data">
-            <div>
-              <PageButton to={data.page > 1 ? search(data.page - 1, limit) : null}>
-                <i className="fas fa-chevron-left" aria-hidden="true" />
-                Sebelumnya
-              </PageButton>
-            </div>
-            <span>
-              Halaman {data.page} · {data.limit} baris per halaman
-            </span>
-            <div>
-              <PageButton to={data.has_next ? search(data.page + 1, limit) : null}>
-                Berikutnya
-                <i className="fas fa-chevron-right ms-2 me-0" aria-hidden="true" />
-              </PageButton>
-            </div>
-          </nav>
+          <Pager page={data.page} hasNext={data.has_next} searchFor={(target) => search(target, limit)} info={`Halaman ${data.page} · ${data.limit} baris per halaman`} />
         </>
       )}
     </>
