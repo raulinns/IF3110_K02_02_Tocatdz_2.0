@@ -5,6 +5,8 @@ import { errorMessage, fieldError } from '../api/messages.ts'
 import brand from '../assets/stiker-if.png'
 import { login } from '../auth/login.ts'
 import { startSession } from '../auth/session-cache.ts'
+import { Field } from '../components/ui/Field.tsx'
+import { PasswordInput } from '../components/ui/PasswordInput.tsx'
 import { ThemeToggle } from '../components/ui/ThemeToggle.tsx'
 import { useCountdown } from '../lib/useCountdown.ts'
 
@@ -25,7 +27,6 @@ export function LoginPage() {
   const inFlight = useRef(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [revealed, setRevealed] = useState(false)
   const [problems, setProblems] = useState<Problems>({})
   const countdown = useCountdown()
   const mutation = useMutation({ mutationFn: login, onSuccess: (session) => startSession(client, session) })
@@ -95,66 +96,28 @@ export function LoginPage() {
               </div>
             )}
             <form onSubmit={submit} noValidate aria-busy={busy}>
-              <div className="mb-3 text-start">
-                <label htmlFor="username" className="form-label">
-                  Username
-                </label>
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  ref={usernameRef}
-                  className={`form-control${problems.username ? ' is-invalid' : ''}`}
-                  value={username}
-                  onChange={edit('username', setUsername)}
-                  placeholder="Masukkan username"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  autoFocus
-                  aria-invalid={problems.username ? true : undefined}
-                  aria-describedby={problems.username ? 'username-error' : undefined}
-                />
-                {problems.username && (
-                  <div id="username-error" className="invalid-feedback">
-                    {problems.username}
-                  </div>
-                )}
-              </div>
-              <div className="mb-4 text-start">
-                <label htmlFor="password" className="form-label">
-                  Password
-                </label>
-                <div className="input-group has-validation">
+              <Field id="username" label="Username" error={problems.username}>
+                {(control) => (
                   <input
-                    id="password"
-                    name="password"
-                    type={revealed ? 'text' : 'password'}
-                    ref={passwordRef}
-                    className={`form-control${problems.password ? ' is-invalid' : ''}`}
-                    value={password}
-                    onChange={edit('password', setPassword)}
-                    placeholder="Masukkan password"
-                    autoComplete="current-password"
-                    aria-invalid={problems.password ? true : undefined}
-                    aria-describedby={problems.password ? 'password-error' : undefined}
+                    {...control}
+                    name="username"
+                    type="text"
+                    ref={usernameRef}
+                    value={username}
+                    onChange={edit('username', setUsername)}
+                    placeholder="Masukkan username"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    autoFocus
                   />
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary"
-                    aria-pressed={revealed}
-                    aria-label={revealed ? 'Sembunyikan password' : 'Tampilkan password'}
-                    onClick={() => setRevealed((current) => !current)}
-                  >
-                    <i className={`fas ${revealed ? 'fa-eye-slash' : 'fa-eye'}`} aria-hidden="true" />
-                  </button>
-                  {problems.password && (
-                    <div id="password-error" className="invalid-feedback">
-                      {problems.password}
-                    </div>
-                  )}
-                </div>
-              </div>
+                )}
+              </Field>
+              <Field id="password" label="Password" error={problems.password} className="mb-4" feedback={false}>
+                {(control) => (
+                  <PasswordInput {...control} inputRef={passwordRef} value={password} onChange={edit('password', setPassword)} placeholder="Masukkan password" autoComplete="current-password" error={problems.password} />
+                )}
+              </Field>
               <button type="submit" className="btn btn-primary w-100" disabled={busy || locked}>
                 {busy ? (
                   <>
