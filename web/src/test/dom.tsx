@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, configure, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { MemoryRouter, type InitialEntry } from 'react-router-dom'
@@ -9,6 +9,12 @@ import { SessionProvider } from '../auth/SessionProvider.tsx'
 // Node menolak URL relatif sedangkan client memakai /api/v1 sehingga base dari jsdom ditambahkan
 const nativeFetch = globalThis.fetch
 vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, window.location.href) : input, init))
+
+// Test pertama di tiap file memuat seluruh aplikasi sehingga batas tunggu bawaan 1 detik terlalu pendek saat banyak file berjalan paralel
+configure({ asyncUtilTimeout: 4000 })
+
+// Layout aplikasi membaca media query sedangkan jsdom tidak menyediakannya sehingga selalu dianggap layar desktop
+vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
 
 afterEach(() => {
   cleanup()

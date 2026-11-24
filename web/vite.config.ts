@@ -15,5 +15,7 @@ export default defineConfig(({ mode }) => ({
   },
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
+    // Test komponen memuat aplikasi penuh sehingga batas 5 detik bawaan bisa terlewati saat beban tinggi
+    testTimeout: 10_000,
   },
 }))

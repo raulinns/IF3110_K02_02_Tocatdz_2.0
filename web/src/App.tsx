@@ -4,6 +4,10 @@ import { AdminLayout } from './components/layout/AdminLayout.tsx'
 import { AppLayout } from './components/layout/AppLayout.tsx'
 import { DatabaseLayout } from './components/layout/DatabaseLayout.tsx'
 import { ErrorPage } from './components/ui/ErrorPage.tsx'
+import { DatabasesPage } from './pages/databases/DatabasesPage.tsx'
+import { RowsPage } from './pages/databases/RowsPage.tsx'
+import { SchemaPage } from './pages/databases/SchemaPage.tsx'
+import { TablePage } from './pages/databases/TablePage.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
 import { Placeholder } from './pages/Placeholder.tsx'
 
@@ -17,12 +21,13 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to="/databases" replace />} />
-          <Route path="databases" element={<Placeholder title="Database" />} />
+          <Route path="databases" element={<DatabasesPage />} />
 
           <Route path="databases/:db" element={<DatabaseLayout />}>
             <Route index element={<Navigate to="schema" replace />} />
-            <Route path="schema" element={<Placeholder bare title="Schema" />} />
-            <Route path="schema/:schema/:table" element={<Placeholder bare title="Detail tabel" />} />
+            <Route path="schema" element={<SchemaPage />} />
+            <Route path="schema/:schema/:table" element={<TablePage />} />
+            <Route path="schema/:schema/:table/data" element={<RowsPage />} />
             <Route path="migrations" element={<Placeholder bare title="Migration" />} />
             <Route path="schema-diff" element={<Placeholder bare title="Schema diff" />} />
             <Route path="review" element={<Placeholder bare title="Review" />} />
