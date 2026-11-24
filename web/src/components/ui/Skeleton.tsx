@@ -18,6 +18,18 @@ export function SkeletonRows({ rows = 5 }: { rows?: number }) {
   )
 }
 
+// Placeholder satu box untuk isi halaman yang judulnya sudah tampil
+export function BoxSkeleton({ rows = 5 }: { rows?: number }) {
+  return (
+    <div role="status" aria-busy="true">
+      <div className="box box-primary">
+        <SkeletonRows rows={rows} />
+      </div>
+      <span className="visually-hidden">Memuat…</span>
+    </div>
+  )
+}
+
 // Kerangka halaman standar: judul dan satu box berisi baris placeholder
 export function PageSkeleton({ rows = 5 }: { rows?: number }) {
   return (
