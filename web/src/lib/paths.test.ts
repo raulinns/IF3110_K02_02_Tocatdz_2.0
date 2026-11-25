@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { accessLabel, engineLabel, tableKindLabel } from './labels.ts'
-import { databasePath, migrationPath, migrationsPath, newMigrationPath, reviewPath, rowsPath, schemaDiffPath, schemaPath, tablePath } from './paths.ts'
+import { databasePath, historyPath, jobPath, jobsPath, migrationPath, migrationsPath, newMigrationPath, requestPath, reviewPath, rowsPath, schemaDiffPath, schemaPath, tablePath } from './paths.ts'
 
 describe('paths', () => {
   it('menyusun path explorer', () => {
@@ -38,5 +38,14 @@ describe('path migration', () => {
     expect(newMigrationPath('db')).toBe('/databases/db/migrations/new')
     expect(schemaDiffPath('db')).toBe('/databases/db/schema-diff')
     expect(reviewPath('db')).toBe('/databases/db/review')
+  })
+})
+
+describe('path workflow', () => {
+  it('menyusun path review, job, dan riwayat dengan segmen yang di-encode', () => {
+    expect(requestPath('db', 'a b')).toBe('/databases/db/review/a%20b')
+    expect(jobsPath('db')).toBe('/databases/db/jobs')
+    expect(jobPath('db', 'j/1')).toBe('/databases/db/jobs/j%2F1')
+    expect(historyPath('db')).toBe('/databases/db/history')
   })
 })

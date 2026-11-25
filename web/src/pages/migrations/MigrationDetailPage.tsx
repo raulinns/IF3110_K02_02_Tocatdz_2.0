@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { migrationQuery, updateMigration, type Definition } from '../../api/migrations.ts'
 import { ApiErrorView } from '../../components/ui/ApiErrorView.tsx'
 import { Breadcrumbs } from '../../components/ui/Breadcrumbs.tsx'
@@ -10,9 +10,9 @@ import { formFromMigration } from '../../lib/definition.ts'
 import { definitionStateLabel, modeLabel } from '../../lib/labels.ts'
 import { migrationsPath, newMigrationPath, reviewPath } from '../../lib/paths.ts'
 import { useDatabase } from '../../lib/useDatabase.ts'
+import { useFlashNotice } from '../../lib/useFlashNotice.ts'
 import { DefinitionEditor } from './DefinitionEditor.tsx'
 import { PlanPanel } from './PlanPanel.tsx'
-import { readNotice } from './prefill.ts'
 import { SubmitDialog } from './SubmitDialog.tsx'
 
 export function MigrationDetailPage() {
@@ -20,19 +20,13 @@ export function MigrationDetailPage() {
   const { migrationId = '' } = useParams()
   const client = useQueryClient()
   const navigate = useNavigate()
-  const location = useLocation()
   const query = useQuery(migrationQuery(db, migrationId))
-  const [notice, setNotice] = useState<string | null>(() => readNotice(location.state))
+  const [notice, setNotice] = useFlashNotice()
   const [submitted, setSubmitted] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   // Editor dibuat ulang saat data dari server berganti supaya isinya selalu sama dengan yang tersimpan
   const [reloads, setReloads] = useState(0)
-
-  // Pesan sekali tampil dihapus dari state riwayat supaya tidak muncul lagi saat halaman dimuat ulang
-  useEffect(() => {
-    if (readNotice(location.state)) void navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
-  }, [location.pathname, location.search, location.state, navigate])
 
   const migration = query.data
   if (query.isPending) return <BoxSkeleton rows={8} />

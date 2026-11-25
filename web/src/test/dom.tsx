@@ -11,7 +11,7 @@ const nativeFetch = globalThis.fetch
 vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, window.location.href) : input, init))
 
 // Test pertama di tiap file memuat seluruh aplikasi sehingga batas tunggu bawaan 1 detik terlalu pendek saat banyak file berjalan paralel
-configure({ asyncUtilTimeout: 4000 })
+configure({ asyncUtilTimeout: 8000 })
 
 // Layout aplikasi membaca media query sedangkan jsdom tidak menyediakannya sehingga selalu dianggap layar desktop
 vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
