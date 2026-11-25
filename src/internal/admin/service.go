@@ -182,25 +182,35 @@ func (s *Service) newID() (security.ID, error) {
 }
 
 func (s *Service) CreateUser(ctx context.Context, actor security.Principal, input NewUser) error {
+	_, err := s.CreateUserRecord(ctx, actor, input)
+	return err
+}
+
+// CreateUserRecord returns the public record produced by the committed create.
+func (s *Service) CreateUserRecord(ctx context.Context, actor security.Principal, input NewUser) (User, error) {
 	if err := s.require(ctx, actor); err != nil {
-		return err
+		return User{}, err
 	}
 	username, err := security.NormalizeUsername(input.Username)
 	if err != nil {
-		return security.ErrInvalidInput
+		return User{}, security.ErrInvalidInput
 	}
 	if err := security.ValidateNewPassword(input.Password); err != nil {
-		return safeError(err)
+		return User{}, safeError(err)
 	}
 	hash, err := s.deps.Passwords.Hash(ctx, input.Password)
 	if err != nil {
-		return safeError(err)
+		return User{}, safeError(err)
 	}
 	id, err := s.newID()
 	if err != nil {
-		return err
+		return User{}, err
 	}
-	return safeError(s.deps.Repository.CreateUser(ctx, actor, User{ID: id, Username: username, Active: true, PlatformAdmin: input.PlatformAdmin}, hash))
+	user := User{ID: id, Username: username, Active: true, PlatformAdmin: input.PlatformAdmin}
+	if err := s.deps.Repository.CreateUser(ctx, actor, user, hash); err != nil {
+		return User{}, safeError(err)
+	}
+	return user, nil
 }
 
 func (s *Service) SetUserActive(ctx context.Context, actor security.Principal, userID security.ID, active bool) error {
@@ -218,18 +228,27 @@ func (s *Service) SetUserActive(ctx context.Context, actor security.Principal, u
 }
 
 func (s *Service) CreateGroup(ctx context.Context, actor security.Principal, name string) error {
+	_, err := s.CreateGroupRecord(ctx, actor, name)
+	return err
+}
+
+func (s *Service) CreateGroupRecord(ctx context.Context, actor security.Principal, name string) (Group, error) {
 	if err := s.require(ctx, actor); err != nil {
-		return err
+		return Group{}, err
 	}
 	name, ok := validName(name)
 	if !ok {
-		return security.ErrInvalidInput
+		return Group{}, security.ErrInvalidInput
 	}
 	id, err := s.newID()
 	if err != nil {
-		return err
+		return Group{}, err
 	}
-	return safeError(s.deps.Repository.CreateGroup(ctx, actor, Group{ID: id, Name: name}))
+	group := Group{ID: id, Name: name}
+	if err := s.deps.Repository.CreateGroup(ctx, actor, group); err != nil {
+		return Group{}, safeError(err)
+	}
+	return group, nil
 }
 
 func (s *Service) AddMember(ctx context.Context, actor security.Principal, groupID security.ID, username string) error {
@@ -254,25 +273,34 @@ func (s *Service) RemoveMember(ctx context.Context, actor security.Principal, gr
 }
 
 func (s *Service) CreateConnection(ctx context.Context, actor security.Principal, engine dbms.Engine, name string, dsn security.Secret) error {
+	_, err := s.CreateConnectionRecord(ctx, actor, engine, name, dsn)
+	return err
+}
+
+func (s *Service) CreateConnectionRecord(ctx context.Context, actor security.Principal, engine dbms.Engine, name string, dsn security.Secret) (Connection, error) {
 	if err := s.require(ctx, actor); err != nil {
-		return err
+		return Connection{}, err
 	}
 	engine, err := dbms.ParseEngine(string(engine))
 	if err != nil {
-		return security.ErrInvalidInput
+		return Connection{}, security.ErrInvalidInput
 	}
 	name, ok := validName(name)
 	if !ok || dsn.Empty() || len(dsn.Reveal()) > MaxDSNBytes || !utf8.ValidString(dsn.Reveal()) {
-		return security.ErrInvalidInput
+		return Connection{}, security.ErrInvalidInput
 	}
 	if err := s.deps.Checker.Check(ctx, engine, dsn); err != nil {
-		return safeError(err)
+		return Connection{}, safeError(err)
 	}
 	id, err := s.newID()
 	if err != nil {
-		return err
+		return Connection{}, err
 	}
-	return safeError(s.deps.Repository.CreateConnection(ctx, actor, Connection{ID: id, Name: name, Engine: engine}, dsn))
+	connection := Connection{ID: id, Name: name, Engine: engine}
+	if err := s.deps.Repository.CreateConnection(ctx, actor, connection, dsn); err != nil {
+		return Connection{}, safeError(err)
+	}
+	return connection, nil
 }
 
 func (s *Service) SetGrant(ctx context.Context, actor security.Principal, groupID, databaseID security.ID, access security.DatabaseAccess) error {

@@ -23,7 +23,7 @@ type AuthConfig struct {
 }
 
 // UserResponse is an explicit K1 DTO, never a serialized Account or Principal.
-// Active is true because Login/Authenticate already verified an active account.
+// Auth responses always have Active=true. Admin responses use the stored state.
 type UserResponse struct {
 	ID            security.ID `json:"id"`
 	Username      string      `json:"username"`
