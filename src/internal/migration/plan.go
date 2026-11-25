@@ -32,6 +32,10 @@ func (r PlanRejection) Message() string {
 		return "Query tidak dapat dianalisis. Pastikan objek sudah ada dan SQL sesuai dengan kondisi database saat ini."
 	case "timeout":
 		return "Analisis melewati batas waktu atau sedang menunggu lock. Coba query yang lebih kecil."
+	case "batch":
+		return "Query plan hanya tersedia untuk migration mode normal."
+	case "direction":
+		return "Definisi migration tidak memiliki SQL untuk arah yang dipilih."
 	default:
 		return "Hasil execution plan terlalu besar untuk ditampilkan."
 	}
@@ -98,7 +102,10 @@ func (s *Service) SupportsPlans() bool {
 func (s *Service) Analyze(ctx context.Context, req Request, id security.ID, options PlanOptions) (PlanResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, PlanTimeout)
 	defer cancel()
-	if err := s.authorize(ctx, req, security.ActionAnalyzeMigration); err != nil {
+	authorize := func(ctx context.Context) error {
+		return s.authorize(ctx, req, security.ActionAnalyzeMigration)
+	}
+	if err := authorize(ctx); err != nil {
 		return PlanResult{}, err
 	}
 	if !security.ValidID(id) || options.Revision == 0 || options.Statement < 1 || options.Statement > 1000 {
@@ -107,26 +114,49 @@ func (s *Service) Analyze(ctx context.Context, req Request, id security.ID, opti
 	if !s.SupportsPlans() {
 		return PlanResult{}, security.ErrUnavailable
 	}
+	load := func(ctx context.Context) (planSource, error) {
+		record, err := s.find(ctx, req, id)
+		if err != nil {
+			return planSource{}, err
+		}
+		if record.Status != DraftStatus {
+			return planSource{}, security.ErrConflict
+		}
+		return planSource{sql: record.SQL, revision: record.Revision, checksum: Checksum(record.SQL)}, nil
+	}
+	return analyzeStoredPlan(ctx, req.DatabaseID, options, s.deps.Coordinator.(PlanCoordinator),
+		s.deps.Validator.(PlanValidator), authorize, load)
+}
+
+type planSource struct {
+	sql      security.Secret
+	revision uint64
+	checksum [32]byte
+	state    DefinitionState
+}
+
+func analyzeStoredPlan(ctx context.Context, databaseID security.ID, options PlanOptions, coordinator PlanCoordinator,
+	validator PlanValidator, authorize func(context.Context) error, load func(context.Context) (planSource, error)) (PlanResult, error) {
 	var result PlanResult
-	err := s.deps.Coordinator.(PlanCoordinator).WithPlanLock(ctx, req.DatabaseID, func(ctx context.Context, target PlanTarget) error {
-		if err := s.authorize(ctx, req, security.ActionAnalyzeMigration); err != nil {
+	err := coordinator.WithPlanLock(ctx, databaseID, func(ctx context.Context, target PlanTarget) error {
+		if err := authorize(ctx); err != nil {
 			return err
 		}
-		record, err := s.find(ctx, req, id)
+		record, err := load(ctx)
 		if err != nil {
 			return err
 		}
-		if record.Status != DraftStatus || record.Revision != options.Revision {
+		if record.revision != options.Revision {
 			return security.ErrConflict
 		}
-		sql, err := s.deps.Validator.(PlanValidator).PlanStatement(ctx, record.SQL, options.Statement, options.Analyze)
+		sql, err := validator.PlanStatement(ctx, record.sql, options.Statement, options.Analyze)
 		if err != nil {
 			return err
 		}
 		if missing(target) {
 			return security.ErrUnavailable
 		}
-		if err := s.authorize(ctx, req, security.ActionAnalyzeMigration); err != nil {
+		if err := authorize(ctx); err != nil {
 			return err
 		}
 		raw, err := target.Explain(ctx, PlanQuery{SQL: sql, Analyze: options.Analyze})
@@ -137,19 +167,19 @@ func (s *Service) Analyze(ctx context.Context, req Request, id security.ID, opti
 		if err != nil {
 			return err
 		}
-		if err := s.authorize(ctx, req, security.ActionAnalyzeMigration); err != nil {
+		if err := authorize(ctx); err != nil {
 			return err
 		}
-		latest, err := s.find(ctx, req, id)
+		latest, err := load(ctx)
 		if err != nil {
 			return err
 		}
-		if latest.Status != DraftStatus || latest.Revision != record.Revision || Checksum(latest.SQL) != Checksum(record.SQL) {
+		if latest.revision != record.revision || latest.checksum != record.checksum || latest.state != record.state {
 			return security.ErrConflict
 		}
 		parsed.Statement = options.Statement
-		parsed.Revision = record.Revision
-		parsed.Checksum = Checksum(record.SQL)
+		parsed.Revision = record.revision
+		parsed.Checksum = record.checksum
 		parsed.SQL = sql
 		result = parsed
 		return nil
@@ -158,7 +188,7 @@ func (s *Service) Analyze(ctx context.Context, req Request, id security.ID, opti
 		var reason PlanRejection
 		if errors.As(err, &reason) {
 			switch reason {
-			case "statement", "analyze", "query", "timeout", "large":
+			case "statement", "analyze", "query", "timeout", "large", "batch", "direction":
 				return PlanResult{}, reason
 			}
 		}

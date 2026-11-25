@@ -106,8 +106,34 @@ Database listing paginates the authorized catalog in name and ID order. Engine
 capabilities describe database compatibility. The frontend can use them together
 with the user's access level to decide which actions to show. Table and row reads
 use the explorer service's grant checks. Schema comparison requires read access
-to both PostgreSQL targets and returns SQL for review. Query plan remains a
-separate integration with M2 draft and revision storage.
+to both PostgreSQL targets and returns SQL for review.
+
+## Query plan (API-04)
+
+Construct the planner with the M2 definition store and the existing PostgreSQL
+validator and target router, then append its route to the same API configuration:
+
+~~~go
+planner, err := migration.NewDefinitionPlanService(migration.DefinitionPlanConfig{
+    Definitions: m2Store,
+    Authorizer:  authorizer,
+    Coordinator: targetRouter,
+    Validator:   postgresValidator,
+})
+if err != nil { /* fail application startup */ }
+routes, err := api.QueryPlanRoutes(planner)
+if err != nil { /* fail application startup */ }
+cfg.Routes = append(cfg.Routes, routes...)
+~~~
+
+POST /api/v1/databases/{database_id}/migrations/{migration_id}/plan requires
+a session, CSRF and view_edit. It uses the saved revision and requested up/down
+direction for normal-mode PostgreSQL definitions, including frozen definitions.
+The response identifies the full definition checksum and contains the allowlisted
+plan tree and optional timings. ANALYZE is limited to read-only SELECT. A revision
+change during planning yields 409. Target analysis creates no queue jobs or history
+entries. Server wiring and validation against stored definitions belong to M2
+store integration by 13524044.
 
 ## Construct and integrate
 
