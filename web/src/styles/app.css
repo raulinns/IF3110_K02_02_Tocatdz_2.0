@@ -907,6 +907,72 @@ a {
 	border-bottom: 1px solid var(--border);
 }
 
+/* Tahapan job dari draft sampai hasil akhir */
+.stepper {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .5rem;
+	margin: 0 0 1rem;
+	padding: 0;
+	list-style: none;
+}
+
+.stepper li {
+	flex: 1 1 7rem;
+	padding: .5rem .75rem;
+	font-size: .8125rem;
+	color: var(--text-muted);
+	background: var(--field);
+	border: 1px solid var(--border-strong);
+	border-radius: 3px;
+}
+
+.stepper li .fas {
+	margin-right: .35rem;
+}
+
+.stepper li.done {
+	color: var(--text);
+	border-color: var(--success);
+}
+
+.stepper li.current {
+	font-weight: 600;
+	color: var(--accent-text);
+	background: var(--accent);
+	border-color: var(--accent);
+}
+
+.stepper li.success {
+	font-weight: 600;
+	color: #fff;
+	background: var(--success);
+	border-color: var(--success);
+}
+
+.stepper li.danger {
+	font-weight: 600;
+	color: #fff;
+	background: var(--danger);
+	border-color: var(--danger);
+}
+
+.stepper li.warning {
+	font-weight: 600;
+	color: #3b2a12;
+	background: var(--warning);
+	border-color: var(--warning);
+}
+
+.progress {
+	background: var(--field);
+	border: 1px solid var(--border-strong);
+}
+
+.progress-bar {
+	background: var(--accent);
+}
+
 /*------------------------------------------------------------------
 [12. Halaman login]
 */
