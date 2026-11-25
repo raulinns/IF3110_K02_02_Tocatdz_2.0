@@ -5,6 +5,9 @@ import { AppLayout } from './components/layout/AppLayout.tsx'
 import { DatabaseLayout } from './components/layout/DatabaseLayout.tsx'
 import { ErrorPage } from './components/ui/ErrorPage.tsx'
 import { ConnectionsPage } from './pages/admin/ConnectionsPage.tsx'
+import { GrantsPage } from './pages/admin/GrantsPage.tsx'
+import { GroupDetailPage } from './pages/admin/GroupDetailPage.tsx'
+import { GroupsPage } from './pages/admin/GroupsPage.tsx'
 import { UsersPage } from './pages/admin/UsersPage.tsx'
 import { DatabasesPage } from './pages/databases/DatabasesPage.tsx'
 import { RowsPage } from './pages/databases/RowsPage.tsx'
@@ -41,9 +44,10 @@ export default function App() {
             <Route path="admin" element={<AdminLayout />}>
               <Route index element={<Navigate to="users" replace />} />
               <Route path="users" element={<UsersPage />} />
-              <Route path="groups" element={<Placeholder bare title="Group" />} />
+              <Route path="groups" element={<GroupsPage />} />
+              <Route path="groups/:groupId" element={<GroupDetailPage />} />
               <Route path="connections" element={<ConnectionsPage />} />
-              <Route path="grants" element={<Placeholder bare title="Akses" />} />
+              <Route path="grants" element={<GrantsPage />} />
             </Route>
           </Route>
 
