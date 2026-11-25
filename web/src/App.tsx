@@ -14,11 +14,15 @@ import { RowsPage } from './pages/databases/RowsPage.tsx'
 import { SchemaPage } from './pages/databases/SchemaPage.tsx'
 import { TablePage } from './pages/databases/TablePage.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
+import { HistoryPage } from './pages/history/HistoryPage.tsx'
+import { JobMonitorPage } from './pages/jobs/JobMonitorPage.tsx'
+import { JobsPage } from './pages/jobs/JobsPage.tsx'
 import { MigrationDetailPage } from './pages/migrations/MigrationDetailPage.tsx'
 import { MigrationNewPage } from './pages/migrations/MigrationNewPage.tsx'
 import { MigrationsPage } from './pages/migrations/MigrationsPage.tsx'
 import { SchemaDiffPage } from './pages/migrations/SchemaDiffPage.tsx'
-import { Placeholder } from './pages/Placeholder.tsx'
+import { ReviewDetailPage } from './pages/review/ReviewDetailPage.tsx'
+import { ReviewListPage } from './pages/review/ReviewListPage.tsx'
 
 export default function App() {
   return (
@@ -41,9 +45,11 @@ export default function App() {
             <Route path="migrations/new" element={<MigrationNewPage />} />
             <Route path="migrations/:migrationId" element={<MigrationDetailPage />} />
             <Route path="schema-diff" element={<SchemaDiffPage />} />
-            <Route path="review" element={<Placeholder bare title="Review" />} />
-            <Route path="jobs" element={<Placeholder bare title="Monitor job" />} />
-            <Route path="history" element={<Placeholder bare title="Riwayat" />} />
+            <Route path="review" element={<ReviewListPage />} />
+            <Route path="review/:requestId" element={<ReviewDetailPage />} />
+            <Route path="jobs" element={<JobsPage />} />
+            <Route path="jobs/:jobId" element={<JobMonitorPage />} />
+            <Route path="history" element={<HistoryPage />} />
           </Route>
 
           <Route element={<RequireAdmin />}>
