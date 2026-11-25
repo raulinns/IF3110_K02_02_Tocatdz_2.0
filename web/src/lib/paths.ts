@@ -11,3 +11,8 @@ export const migrationPath = (db: string, id: string) => `${migrationsPath(db)}/
 export const newMigrationPath = (db: string) => `${migrationsPath(db)}/new`
 export const schemaDiffPath = (db: string) => `${databasePath(db)}/schema-diff`
 export const reviewPath = (db: string) => `${databasePath(db)}/review`
+export const requestPath = (db: string, id: string) => `${reviewPath(db)}/${encode(id)}`
+export const jobsPath = (db: string) => `${databasePath(db)}/jobs`
+export const jobPath = (db: string, id: string) => `${jobsPath(db)}/${encode(id)}`
+export const historyPath = (db: string) => `${databasePath(db)}/history`
+
