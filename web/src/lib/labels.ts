@@ -5,3 +5,7 @@ export const accessLabel = (access: Schemas['Access']) => (access === 'view_edit
 export const engineLabel = (engine: Schemas['Database']['engine']) => (engine === 'mysql' ? 'MySQL' : 'PostgreSQL')
 
 export const tableKindLabel = (kind: Schemas['TableKind']) => kind.replace(/_/g, ' ')
+
+export const modeLabel = (mode: Schemas['ExecutionMode']) => (mode === 'batch' ? 'Batch' : 'Normal')
+
+export const definitionStateLabel = (state: Schemas['DefinitionState']) => (state === 'frozen' ? 'Dibekukan' : 'Draft')

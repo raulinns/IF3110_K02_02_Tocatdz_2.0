@@ -16,6 +16,11 @@ configure({ asyncUtilTimeout: 4000 })
 // Layout aplikasi membaca media query sedangkan jsdom tidak menyediakannya sehingga selalu dianggap layar desktop
 vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
 
+// CodeMirror mengukur teks lewat geometri Range yang tidak disediakan jsdom sehingga dibuat kosong
+const emptyRects = Object.assign([], { item: () => null })
+Range.prototype.getClientRects = () => emptyRects as unknown as DOMRectList
+Range.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 0, 0)
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()

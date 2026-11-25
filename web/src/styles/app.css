@@ -656,6 +656,46 @@ a {
 	resize: vertical;
 }
 
+/* Editor SQL berbasis CodeMirror, warnanya mengikuti tema lewat variabel */
+:root {
+	--sql-keyword: #0b6fa8;
+	--sql-string: #1a7f4b;
+	--sql-number: #b45309;
+	--sql-comment: #6b7480;
+	--sql-type: #7c3aed;
+}
+
+[data-bs-theme="dark"] {
+	--sql-keyword: #6cb6ff;
+	--sql-string: #7ee0a8;
+	--sql-number: #f5b56f;
+	--sql-comment: #8b949e;
+	--sql-type: #c4a3ff;
+}
+
+.sql-field.is-invalid .cm-editor {
+	border-color: var(--danger);
+}
+
+.sql-errors {
+	margin: .35rem 0 0;
+	padding: 0;
+	list-style: none;
+	font-size: .75rem;
+	color: var(--danger);
+}
+
+.sql-editor-loading {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+	font-size: .8125rem;
+	background: var(--field);
+	border: 1px solid var(--border-strong);
+	border-radius: 3px;
+}
+
 .code-block {
 	margin: 0;
 	padding: 1rem;

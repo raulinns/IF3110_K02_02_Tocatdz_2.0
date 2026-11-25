@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { accessLabel, engineLabel, tableKindLabel } from './labels.ts'
-import { databasePath, rowsPath, schemaPath, tablePath } from './paths.ts'
+import { databasePath, migrationPath, migrationsPath, newMigrationPath, reviewPath, rowsPath, schemaDiffPath, schemaPath, tablePath } from './paths.ts'
 
 describe('paths', () => {
   it('menyusun path explorer', () => {
@@ -28,5 +28,15 @@ describe('labels', () => {
     expect(tableKindLabel('partitioned_table')).toBe('partitioned table')
     expect(tableKindLabel('materialized_view')).toBe('materialized view')
     expect(tableKindLabel('view')).toBe('view')
+  })
+})
+
+describe('path migration', () => {
+  it('menyusun path migration dengan segmen yang di-encode', () => {
+    expect(migrationsPath('db 1')).toBe('/databases/db%201/migrations')
+    expect(migrationPath('db', 'a/b')).toBe('/databases/db/migrations/a%2Fb')
+    expect(newMigrationPath('db')).toBe('/databases/db/migrations/new')
+    expect(schemaDiffPath('db')).toBe('/databases/db/schema-diff')
+    expect(reviewPath('db')).toBe('/databases/db/review')
   })
 })
