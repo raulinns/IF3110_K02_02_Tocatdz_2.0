@@ -1,7 +1,7 @@
-# JSON API foundation, authentication and explorer
+# JSON API foundation, authentication, admin and explorer
 
-This package implements K1's transport boundary, authentication and read-only
-explorer. Without Auth or custom Routes, the API subtree returns JSON 404.
+This package implements K1's transport boundary, authentication, admin and
+read-only explorer. Without Auth or custom Routes, the API subtree returns JSON 404.
 
 ## Authentication module (API-02)
 
@@ -54,6 +54,38 @@ handler once, avoiding a redundant Authenticate/rotation immediately before
 revocation. Failed login uses actor=anonymous; logout records only the verified
 actor. Log text/error codes exclude raw dependency errors, cookie/CSRF values
 and request bodies. Trace/span fields remain null until TRC instrumentation.
+
+## Admin module (API-03)
+
+Append the routes to the same API configuration used for authentication.
+The integrator constructs the two services from the platform repositories:
+
+~~~go
+m2Admin, err := admin.NewM2Service(adminService, m2AdminRepository)
+if err != nil { /* fail application startup */ }
+routes, err := api.AdminRoutes(api.AdminConfig{
+    Service: adminService,
+    M2:      m2Admin,
+    Logger:  logger,
+})
+if err != nil { /* fail application startup */ }
+cfg.Routes = append(cfg.Routes, routes...)
+~~~
+
+All 17 operations use session authentication and the backend platform-admin
+authorizer. Mutations use the JSON transport's Origin/CSRF guard. Lists use K1
+ordering and pagination. Create responses include the committed public record
+and a Location header. Passwords and DSNs are input-only.
+
+Omit M2 to expose the seven routes backed by the existing admin service:
+list/create users, create group, list/create connections, and list/revoke grants.
+Register the full module after the platform store implements
+admin.M2Repository. That port defines the transaction requirements for returning
+mutation results, resetting passwords, changing membership or leadership, and
+rejecting tombstones that would affect unresolved workflow. Reuse the M2-aware
+platform store for M1-backed grant revocation so it follows workflow locking too.
+The admin tests use real session, CSRF and authorizer components with in-memory
+persistence. Use real PostgreSQL integration tests to verify those store guarantees.
 
 ## Explorer module (API-04)
 

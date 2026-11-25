@@ -8,6 +8,12 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
+type pageInfo struct {
+	Page    int  `json:"page"`
+	Limit   int  `json:"limit"`
+	HasNext bool `json:"has_next"`
+}
+
 // ParseQuery rejects malformed escaping, unknown names and repeated keys. Values
 // remain strings for endpoint-specific semantic validation; no request data is
 // included in errors. An empty allowlist rejects every query parameter.

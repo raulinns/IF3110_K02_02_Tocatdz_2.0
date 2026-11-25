@@ -43,12 +43,6 @@ func ExplorerRoutes(cfg ExplorerConfig) ([]Route, error) {
 	}, nil
 }
 
-type explorerPage struct {
-	Page    int  `json:"page"`
-	Limit   int  `json:"limit"`
-	HasNext bool `json:"has_next"`
-}
-
 type explorerCapabilities struct {
 	SchemaDiff bool `json:"schema_diff"`
 	QueryPlans bool `json:"query_plans"`
@@ -101,9 +95,9 @@ func (cfg ExplorerConfig) databases(w http.ResponseWriter, r *http.Request) erro
 		})
 	}
 	return WriteJSON(w, http.StatusOK, struct {
-		explorerPage
+		pageInfo
 		Items []explorerDatabase `json:"items"`
-	}{explorerPage{page, limit, end < len(entries)}, items})
+	}{pageInfo{page, limit, end < len(entries)}, items})
 }
 
 func explorerRequest(r *http.Request) (explorer.Request, error) {
@@ -176,11 +170,11 @@ func (cfg ExplorerConfig) rows(w http.ResponseWriter, r *http.Request) error {
 		items = append(items, cells)
 	}
 	return writeJSON(w, http.StatusOK, struct {
-		explorerPage
+		pageInfo
 		Columns []string          `json:"columns"`
 		Items   [][]explorer.Cell `json:"items"`
 		Order   explorer.RowOrder `json:"order"`
-	}{explorerPage{result.Page, result.Limit, result.HasNext}, nonNil(result.Columns), items, result.Order}, explorer.MaxPayloadBytes)
+	}{pageInfo{result.Page, result.Limit, result.HasNext}, nonNil(result.Columns), items, result.Order}, explorer.MaxPayloadBytes)
 }
 
 type schemaChange struct {
