@@ -86,12 +86,23 @@ func run() error {
 	if input.AdminHash, err = hasher.Hash(ctx, adminPassword); err != nil {
 		return err
 	}
-	if viewerPassword := security.NewSecret(os.Getenv("SEED_VIEWER_PASSWORD")); !viewerPassword.Empty() {
-		if err := security.ValidateNewPassword(viewerPassword); err != nil {
-			return errors.New("SEED_VIEWER_PASSWORD minimal 15 karakter")
+	for _, account := range []struct {
+		env, username string
+		hash          *security.Secret
+		name          *string
+	}{
+		{"SEED_VIEWER_PASSWORD", "pengamat", &input.ViewerHash, &input.ViewerUsername},
+		{"SEED_EDITOR_PASSWORD", "editor", &input.EditorHash, &input.EditorUsername},
+	} {
+		password := security.NewSecret(os.Getenv(account.env))
+		if password.Empty() {
+			continue
 		}
-		input.ViewerUsername = "pengamat"
-		if input.ViewerHash, err = hasher.Hash(ctx, viewerPassword); err != nil {
+		if err := security.ValidateNewPassword(password); err != nil {
+			return errors.New(account.env + " minimal 15 karakter")
+		}
+		*account.name = account.username
+		if *account.hash, err = hasher.Hash(ctx, password); err != nil {
 			return err
 		}
 	}
@@ -99,21 +110,37 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if targetURL := strings.TrimSpace(os.Getenv("SEED_TARGET_DATABASE_URL")); targetURL != "" {
+	targets := []struct{ urlEnv, nameEnv, fallback string }{
+		{"SEED_TARGET_DATABASE_URL", "SEED_TARGET_NAME", "demo"},
+		{"SEED_TARGET2_DATABASE_URL", "SEED_TARGET2_NAME", "gudang"},
+	}
+	seeded := false
+	for _, target := range targets {
+		targetURL := strings.TrimSpace(os.Getenv(target.urlEnv))
+		if targetURL == "" {
+			continue
+		}
 		runtimeDSN, err := postgres.PrepareManagedTarget(ctx, pool, security.NewSecret(targetURL), box)
 		if err != nil {
 			return err
 		}
-		input.TargetName, input.TargetDSN = valueOr(os.Getenv("SEED_TARGET_NAME"), "demo"), runtimeDSN
 		conn, err := pgx.Connect(ctx, runtimeDSN.Reveal())
 		if err != nil {
-			return errors.New("SEED_TARGET_DATABASE_URL tidak bisa dihubungi")
+			return errors.New(target.urlEnv + " tidak bisa dihubungi")
 		}
 		_, err = conn.Exec(ctx, sampleTarget)
 		conn.Close(ctx)
 		if err != nil {
 			return errors.New("gagal membuat data contoh di database target")
 		}
+		input.TargetName, input.TargetDSN = valueOr(os.Getenv(target.nameEnv), target.fallback), runtimeDSN
+		if err := postgres.Seed(ctx, pool, box, security.NewTokenGenerator(), input); err != nil {
+			return err
+		}
+		seeded = true
+	}
+	if seeded {
+		return nil
 	}
 	return postgres.Seed(ctx, pool, box, security.NewTokenGenerator(), input)
 }

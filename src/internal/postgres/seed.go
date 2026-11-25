@@ -16,6 +16,8 @@ type SeedInput struct {
 	AdminHash      security.Secret
 	ViewerUsername string
 	ViewerHash     security.Secret
+	EditorUsername string
+	EditorHash     security.Secret
 	TargetName     string
 	TargetDSN      security.Secret
 }
@@ -56,6 +58,14 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, box *SecretBox, ids idSource,
 		if input.ViewerUsername != "" && !input.ViewerHash.Empty() {
 			viewerID, err = upsertID(ctx, tx, ids, "INSERT INTO users (id, username, password_hash) VALUES ($1, $2, $3) ON CONFLICT (username) DO NOTHING",
 				"SELECT id::text FROM users WHERE username = $1", input.ViewerUsername, input.ViewerHash.Reveal())
+			if err != nil {
+				return err
+			}
+		}
+		editorID := ""
+		if input.EditorUsername != "" && !input.EditorHash.Empty() {
+			editorID, err = upsertID(ctx, tx, ids, "INSERT INTO users (id, username, password_hash) VALUES ($1, $2, $3) ON CONFLICT (username) DO NOTHING",
+				"SELECT id::text FROM users WHERE username = $1", input.EditorUsername, input.EditorHash.Reveal())
 			if err != nil {
 				return err
 			}
@@ -102,9 +112,11 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, box *SecretBox, ids idSource,
 		if _, err := tx.Exec(ctx, "UPDATE managed_databases SET dsn_ciphertext=$2 WHERE id=$1", databaseID, sealed); err != nil {
 			return mapError(err)
 		}
+		// Leader tiap group menyetujui perubahan; editor mengajukan perubahan agar tidak menyetujui miliknya sendiri.
 		groups := []struct {
-			name, access, member string
-		}{{"pengembang", "view_edit", adminID}, {"pengamat", "view_only", viewerID}}
+			name, access string
+			members      []string
+		}{{"pengembang", "view_edit", []string{adminID, editorID}}, {"pengamat", "view_only", []string{viewerID}}}
 		for _, group := range groups {
 			groupID, err := upsertID(ctx, tx, ids, "INSERT INTO groups (id, name) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING",
 				"SELECT id::text FROM groups WHERE name = $1", group.name)
@@ -115,8 +127,16 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, box *SecretBox, ids idSource,
 				groupID, databaseID, group.access); err != nil {
 				return mapError(err)
 			}
-			if group.member != "" {
-				if _, err := tx.Exec(ctx, "INSERT INTO group_memberships (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", groupID, group.member); err != nil {
+			for _, member := range group.members {
+				if member == "" {
+					continue
+				}
+				if _, err := tx.Exec(ctx, "INSERT INTO group_memberships (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", groupID, member); err != nil {
+					return mapError(err)
+				}
+			}
+			if group.members[0] != "" {
+				if _, err := tx.Exec(ctx, "UPDATE groups SET leader_user_id = $2 WHERE id = $1 AND leader_user_id IS NULL", groupID, group.members[0]); err != nil {
 					return mapError(err)
 				}
 			}

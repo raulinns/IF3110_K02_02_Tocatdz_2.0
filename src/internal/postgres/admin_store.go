@@ -183,6 +183,23 @@ func groupMembers(ctx context.Context, tx pgx.Tx, groupID security.ID) ([]securi
 	return result, mapError(rows.Err())
 }
 
+// Perubahan admin mengunci guard database terdampak agar tidak bentrok dengan workflow M2.
+const (
+	databasesOfGroup = "SELECT database_id FROM group_database_grants WHERE group_id = $1"
+	databasesOfUser  = `SELECT x.database_id FROM group_database_grants x JOIN group_memberships m ON m.group_id = x.group_id
+		WHERE m.user_id = $1`
+)
+
+func lockGuards(ctx context.Context, tx pgx.Tx, databases string, arg security.ID) error {
+	_, err := tx.Exec(ctx, "SELECT 1 FROM database_workflows WHERE database_id IN ("+databases+") ORDER BY database_id FOR UPDATE", string(arg))
+	return mapError(err)
+}
+
+func lockGuard(ctx context.Context, tx pgx.Tx, databaseID security.ID) error {
+	_, err := tx.Exec(ctx, "SELECT 1 FROM database_workflows WHERE database_id = $1 FOR UPDATE", string(databaseID))
+	return mapError(err)
+}
+
 func (s *AdminStore) CreateUser(ctx context.Context, actor security.Principal, user admin.User, hash security.Secret) error {
 	return s.mutate(ctx, actor, func(tx pgx.Tx) (change, []security.ID, error) {
 		_, err := tx.Exec(ctx, "INSERT INTO users (id, username, password_hash, active, platform_admin) VALUES ($1, $2, $3, true, $4)",
@@ -193,6 +210,9 @@ func (s *AdminStore) CreateUser(ctx context.Context, actor security.Principal, u
 
 func (s *AdminStore) SetUserActive(ctx context.Context, actor security.Principal, userID security.ID, active bool) error {
 	return s.mutate(ctx, actor, func(tx pgx.Tx) (change, []security.ID, error) {
+		if err := lockGuards(ctx, tx, databasesOfUser, userID); err != nil {
+			return noChange, nil, err
+		}
 		tag, err := tx.Exec(ctx, "UPDATE users SET active = $2 WHERE id = $1 AND active <> $2", string(userID), active)
 		if err != nil {
 			return noChange, nil, mapError(err)
@@ -227,6 +247,9 @@ func (s *AdminStore) AddMember(ctx context.Context, actor security.Principal, gr
 		if err := tx.QueryRow(ctx, "SELECT id::text FROM users WHERE username = $1", username).Scan(&userID); err != nil {
 			return noChange, nil, mapError(err)
 		}
+		if err := lockGuards(ctx, tx, databasesOfGroup, groupID); err != nil {
+			return noChange, nil, err
+		}
 		tag, err := tx.Exec(ctx, "INSERT INTO group_memberships (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", string(groupID), userID)
 		if err != nil {
 			return noChange, nil, mapError(err)
@@ -240,6 +263,17 @@ func (s *AdminStore) AddMember(ctx context.Context, actor security.Principal, gr
 
 func (s *AdminStore) RemoveMember(ctx context.Context, actor security.Principal, groupID, userID security.ID) error {
 	return s.mutate(ctx, actor, func(tx pgx.Tx) (change, []security.ID, error) {
+		if err := lockGuards(ctx, tx, databasesOfGroup, groupID); err != nil {
+			return noChange, nil, err
+		}
+		// Leader tidak bisa dikeluarkan sebelum diganti.
+		var leader bool
+		if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM groups WHERE id = $1 AND leader_user_id = $2)", string(groupID), string(userID)).Scan(&leader); err != nil {
+			return noChange, nil, mapError(err)
+		}
+		if leader {
+			return noChange, nil, security.ErrConflict
+		}
 		tag, err := tx.Exec(ctx, "DELETE FROM group_memberships WHERE group_id = $1 AND user_id = $2", string(groupID), string(userID))
 		if err != nil {
 			return noChange, nil, mapError(err)
@@ -264,6 +298,9 @@ func (s *AdminStore) CreateConnection(ctx context.Context, actor security.Princi
 
 func (s *AdminStore) SetGrant(ctx context.Context, actor security.Principal, groupID, databaseID security.ID, access security.DatabaseAccess) error {
 	return s.mutate(ctx, actor, func(tx pgx.Tx) (change, []security.ID, error) {
+		if err := lockGuard(ctx, tx, databaseID); err != nil {
+			return noChange, nil, err
+		}
 		var previous *string
 		err := tx.QueryRow(ctx, "SELECT access FROM group_database_grants WHERE group_id = $1 AND database_id = $2 FOR UPDATE",
 			string(groupID), string(databaseID)).Scan(&previous)
@@ -291,6 +328,9 @@ func (s *AdminStore) SetGrant(ctx context.Context, actor security.Principal, gro
 
 func (s *AdminStore) RevokeGrant(ctx context.Context, actor security.Principal, groupID, databaseID security.ID) error {
 	return s.mutate(ctx, actor, func(tx pgx.Tx) (change, []security.ID, error) {
+		if err := lockGuard(ctx, tx, databaseID); err != nil {
+			return noChange, nil, err
+		}
 		tag, err := tx.Exec(ctx, "DELETE FROM group_database_grants WHERE group_id = $1 AND database_id = $2", string(groupID), string(databaseID))
 		if err != nil {
 			return noChange, nil, mapError(err)
@@ -301,4 +341,44 @@ func (s *AdminStore) RevokeGrant(ctx context.Context, actor security.Principal, 
 		members, err := groupMembers(ctx, tx, groupID)
 		return reduction, members, err
 	})
+}
+
+// SetGroupLeader mengosongkan leader jika userID kosong.
+func (s *AdminStore) SetGroupLeader(ctx context.Context, actor security.Principal, groupID, userID security.ID) error {
+	if !security.ValidID(groupID) || (userID != "" && !security.ValidID(userID)) {
+		return security.ErrInvalidInput
+	}
+	return s.mutate(ctx, actor, func(tx pgx.Tx) (change, []security.ID, error) {
+		if err := lockGuards(ctx, tx, databasesOfGroup, groupID); err != nil {
+			return noChange, nil, err
+		}
+		if userID != "" {
+			var member bool
+			if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM group_memberships WHERE group_id = $1 AND user_id = $2)", string(groupID), string(userID)).Scan(&member); err != nil {
+				return noChange, nil, mapError(err)
+			}
+			if !member {
+				return noChange, nil, security.ErrInvalidInput
+			}
+		}
+		tag, err := tx.Exec(ctx, "UPDATE groups SET leader_user_id = $2 WHERE id = $1", string(groupID), nullID(userID))
+		if err != nil {
+			return noChange, nil, mapError(err)
+		}
+		if tag.RowsAffected() == 0 {
+			return noChange, nil, security.ErrNotFound
+		}
+		return noChange, nil, nil
+	})
+}
+
+func (s *AdminStore) GroupLeader(ctx context.Context, groupID security.ID) (security.ID, error) {
+	if !security.ValidID(groupID) {
+		return "", security.ErrNotFound
+	}
+	var leader string
+	if err := s.pool.QueryRow(ctx, "SELECT COALESCE(leader_user_id::text, '') FROM groups WHERE id = $1", string(groupID)).Scan(&leader); err != nil {
+		return "", mapError(err)
+	}
+	return security.ID(leader), nil
 }

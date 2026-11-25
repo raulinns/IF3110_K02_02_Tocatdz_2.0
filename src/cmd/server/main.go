@@ -82,7 +82,18 @@ func run() error {
 		server.Handler = platform.Handler
 		workerCtx, stopWorker := context.WithCancel(ctx)
 		done := make(chan struct{})
-		go func() { defer close(done); platform.RunWorker(workerCtx) }()
+		embedded := os.Getenv("EMBEDDED_WORKER") == "true"
+		go func() {
+			defer close(done)
+			if !embedded {
+				platform.RunWorker(workerCtx)
+				return
+			}
+			finished := make(chan struct{})
+			go func() { defer close(finished); platform.RunEmbeddedWorker(workerCtx) }()
+			platform.RunWorker(workerCtx)
+			<-finished
+		}()
 		return &applicationResources{platform: platform, stop: stopWorker, done: done}, nil
 	})
 }

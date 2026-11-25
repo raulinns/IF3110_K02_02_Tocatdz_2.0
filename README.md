@@ -20,13 +20,13 @@ dijalankan dari folder `src/`.
 1. **Masuk ke root repository dan jalankan PostgreSQL.**
 
    ```sh
-   docker compose up -d
+   docker compose up -d postgres
    docker compose ps
    ```
 
    Konfigurasi Docker bawaan membuat PostgreSQL di `localhost:5433`, database
-   `platform` untuk metadata aplikasi, database `demo` sebagai target contoh,
-   dan user/password lokal `app`/`app`. Tunggu sampai service berstatus
+   `platform` untuk metadata aplikasi, database `demo` dan `gudang` sebagai
+   target contoh, dan user/password lokal `app`/`app`. Tunggu sampai service berstatus
    `healthy` sebelum menjalankan seed.
 
    Jika memakai PostgreSQL lokal tanpa Docker, buat database metadata dan target
@@ -52,8 +52,8 @@ dijalankan dari folder `src/`.
    ```
 
    Ketiga nilai harus berbeda dan masing-masing merupakan base64 dari 32 byte
-   acak. Isi juga `SEED_ADMIN_PASSWORD` dan, jika akun pengamat diperlukan,
-   `SEED_VIEWER_PASSWORD`; setiap password minimal 15 karakter. Jangan menambahkan
+   acak. Isi juga `SEED_ADMIN_PASSWORD`, `SEED_VIEWER_PASSWORD`, dan
+   `SEED_EDITOR_PASSWORD`; setiap password minimal 15 karakter. Jangan menambahkan
    `export` di dalam `.env` karena loader aplikasi mengharapkan format
    `NAMA_VARIABEL=nilai`.
 
@@ -80,14 +80,34 @@ dijalankan dari folder `src/`.
    database target khusus aplikasi; setup memindahkan kepemilikan objek aplikasi
    milik akun setup ke akun SQL tersebut.
 
-4. **Jalankan server.**
+4. **Build SPA, lalu jalankan server dan worker.**
 
    ```sh
+   (cd ../web && npm ci && npm run build:embed)
    go run ./cmd/server
+   go run ./cmd/worker
    ```
+
+   `build:embed` menyalin hasil build ke `src/internal/spa/dist` sehingga ikut
+   ditanam ke binary server. Tanpa langkah ini server menampilkan halaman
+   placeholder. Worker menjalankan job migration dari queue; untuk pengembangan
+   cukup satu proses dengan `EMBEDDED_WORKER=true go run ./cmd/server`.
 
    Buka `http://localhost:8080`. Alamat yang dibuka di browser harus sama persis
    dengan nilai `PUBLIC_ORIGIN`.
+
+   Alternatifnya, seluruh aplikasi dapat dijalankan di Docker:
+
+   ```sh
+   docker compose up -d --build
+   docker compose run --rm \
+     -e SEED_TARGET_DATABASE_URL=postgres://app:app@postgres:5432/demo?sslmode=disable \
+     -e SEED_TARGET2_DATABASE_URL=postgres://app:app@postgres:5432/gudang?sslmode=disable \
+     server seed
+   ```
+
+   Seed dari dalam container memakai host `postgres` agar DSN target yang
+   tersimpan bisa dihubungi oleh server dan worker di jaringan Docker.
 
 5. **Hentikan service lokal setelah selesai.**
 
@@ -137,8 +157,12 @@ Skema database platform diterapkan otomatis saat server atau seed berjalan (`src
 
 | Username | Password | Peran |
 | --- | --- | --- |
-| `admin` (atau `SEED_ADMIN_USERNAME`) | `SEED_ADMIN_PASSWORD` | Platform admin, anggota group `pengembang` (View + Edit ke `demo`) |
-| `pengamat` | `SEED_VIEWER_PASSWORD` | Anggota group `pengamat` (View Only ke `demo`) |
+| `admin` (atau `SEED_ADMIN_USERNAME`) | `SEED_ADMIN_PASSWORD` | Platform admin, leader group `pengembang` (View + Edit ke `demo` dan `gudang`) |
+| `pengamat` | `SEED_VIEWER_PASSWORD` | Leader group `pengamat` (View Only ke `demo` dan `gudang`) |
+| `editor` | `SEED_EDITOR_PASSWORD` | Anggota group `pengembang`, mengajukan perubahan migration |
+
+Admin menjadi leader group `pengembang`. Perubahan pada `demo` atau `gudang` perlu
+disetujui leader kedua group, sedangkan pemohon tidak boleh menyetujui CR miliknya.
 
 Password tidak disimpan di repo; masing-masing anggota tim mengisinya di `.env` lokal.
 
