@@ -19,8 +19,7 @@ import (
 
 type RevalidatorFactory func(reader migration.RevalidationReader, clock security.Clock) (migration.Revalidator, error)
 
-// DefaultRevalidator diisi saat Revalidator domain (DOM-05) di-merge; sebelum itu worker tidak mau start.
-var DefaultRevalidator RevalidatorFactory
+var DefaultRevalidator RevalidatorFactory = migration.NewRevalidator
 
 var ErrRevalidatorMissing = errors.New("migration revalidator is not wired: worker cannot execute jobs safely")
 
@@ -82,17 +81,28 @@ func (r *WorkerRuntime) build(ctx context.Context, logger *slog.Logger, connecti
 	if err != nil {
 		return err
 	}
-	revalidator, err := opts.Revalidator(store, clock)
+	r.Worker, err = newWorker(store, r.targets, opts.Revalidator, clock, logger, opts.Owner, opts.Concurrency)
+	return err
+}
+
+func newM2Worker(store *postgres.M2Store, targets *targetdb.Router, clock security.Clock, logger *slog.Logger, owner string, concurrency int) (*worker.Worker, error) {
+	return newWorker(store, targets, DefaultRevalidator, clock, logger, owner, concurrency)
+}
+
+func newWorker(store *postgres.M2Store, targets *targetdb.Router, factory RevalidatorFactory, clock security.Clock, logger *slog.Logger, owner string, concurrency int) (*worker.Worker, error) {
+	if factory == nil {
+		return nil, ErrRevalidatorMissing
+	}
+	revalidator, err := factory(store, clock)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	runner, err := worker.NewModeRunner(clock)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	r.Worker, err = worker.New(worker.Config{Store: store, Coordinator: r.targets, Revalidator: revalidator, Runner: runner,
-		Progress: store, Clock: clock, Logger: logger, Owner: opts.Owner, Concurrency: opts.Concurrency})
-	return err
+	return worker.New(worker.Config{Store: store, Coordinator: targets, Revalidator: revalidator, Runner: runner,
+		Progress: store, Clock: clock, Logger: logger, Owner: owner, Concurrency: concurrency})
 }
 
 func (r *WorkerRuntime) Run(ctx context.Context) { r.Worker.Run(ctx) }

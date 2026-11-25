@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/argon2"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/admin"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/api"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/config"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
@@ -17,17 +18,19 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/postgres"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/schemadiff"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/spa"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/targetdb"
-	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/ui"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/web"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/worker"
 )
 
 // Platform berisi handler HTTP siap pakai beserta sumber daya yang harus ditutup saat aplikasi berhenti.
 type Platform struct {
-	Handler http.Handler
-	worker  *migration.ReconcileWorker
-	targets *targetdb.Router
-	pool    *pgxpool.Pool
+	Handler  http.Handler
+	worker   *migration.ReconcileWorker
+	m2Worker *worker.Worker
+	targets  *targetdb.Router
+	pool     *pgxpool.Pool
 }
 
 func NewPasswordHasher() (*security.Argon2idHasher, error) {
@@ -120,18 +123,6 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 	if err != nil {
 		return err
 	}
-	postgresValidator := migration.NewPostgreSQLValidator()
-	validator, err := targetdb.NewMigrationValidator(p.pool, postgresValidator, migration.NewMySQLValidator())
-	if err != nil {
-		return err
-	}
-	migrations, err := migration.NewService(migration.Config{
-		Repository: ledger, Coordinator: p.targets, Validator: validator,
-		Authorizer: authorizer, Accounts: store, IDs: tokens, Clock: clock,
-	})
-	if err != nil {
-		return err
-	}
 	reconciler, err := migration.NewReconciler(migration.ReconcilerConfig{Repository: ledger, Coordinator: p.targets, Clock: clock})
 	if err != nil {
 		return err
@@ -140,6 +131,7 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 	if err != nil {
 		return err
 	}
+	postgresValidator := migration.NewPostgreSQLValidator()
 	diff, err := schemadiff.NewService(schemadiff.Config{Reader: p.targets, Validator: postgresValidator, Authorizer: authorizer})
 	if err != nil {
 		return err
@@ -152,29 +144,70 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 	if err != nil {
 		return err
 	}
-	adminPages, err := ui.NewAdminAdapter(adminService)
+	adminM2, err := admin.NewM2Service(adminService, adminStore)
 	if err != nil {
 		return err
 	}
-	frontend, err := ui.NewFrontend(ui.FrontendConfig{
-		Security:   security.HTTPMiddlewareConfig{Auth: auth, Logout: auth, CSRF: csrf, Cookies: cookies, Throttle: limiter},
-		Viewer:     viewer,
-		Authorizer: authorizer,
-		Migrations: migrations,
-		Admin:      adminPages,
-		SchemaDiff: diff,
+	workflow, err := postgres.NewM2Store(p.pool)
+	if err != nil {
+		return err
+	}
+	planner, err := migration.NewDefinitionPlanService(migration.DefinitionPlanConfig{
+		Definitions: workflow, Authorizer: authorizer, Coordinator: p.targets, Validator: postgresValidator,
 	})
 	if err != nil {
 		return err
 	}
-	p.Handler = web.NewRouter(logger, frontend)
+	routes, err := apiRoutes(logger, adminService, adminM2, viewer, diff, p.targets, planner)
+	if err != nil {
+		return err
+	}
+	v1, err := api.New(api.Config{
+		Security: security.HTTPMiddlewareConfig{Auth: auth, Logout: auth, CSRF: csrf, Cookies: cookies, Throttle: limiter},
+		Logger:   logger, Routes: routes, Auth: &api.AuthConfig{Leaders: workflow},
+	})
+	if err != nil {
+		return err
+	}
+	frontend, err := spa.New()
+	if err != nil {
+		return err
+	}
+	if p.m2Worker, err = newM2Worker(workflow, p.targets, clock, logger, "server-embedded", 1); err != nil {
+		return err
+	}
+	p.Handler = web.NewRouter(logger, v1, frontend)
 	return nil
+}
+
+func apiRoutes(logger *slog.Logger, adminService *admin.Service, adminM2 *admin.M2Service, viewer explorer.Viewer,
+	diff schemadiff.Application, engines api.EngineResolver, planner api.DefinitionPlanner) ([]api.Route, error) {
+	adminRoutes, err := api.AdminRoutes(api.AdminConfig{Service: adminService, M2: adminM2, Logger: logger})
+	if err != nil {
+		return nil, err
+	}
+	explorerRoutes, err := api.ExplorerRoutes(api.ExplorerConfig{Viewer: viewer, Diff: diff, Engines: engines})
+	if err != nil {
+		return nil, err
+	}
+	planRoutes, err := api.QueryPlanRoutes(planner)
+	if err != nil {
+		return nil, err
+	}
+	return append(append(adminRoutes, explorerRoutes...), planRoutes...), nil
 }
 
 // RunWorker menjalankan rekonsiliasi migration pending sampai ctx dibatalkan.
 func (p *Platform) RunWorker(ctx context.Context) {
 	if p.worker != nil {
 		p.worker.Run(ctx)
+	}
+}
+
+// RunEmbeddedWorker menjalankan worker M2 di dalam proses server, untuk pengembangan lokal.
+func (p *Platform) RunEmbeddedWorker(ctx context.Context) {
+	if p.m2Worker != nil {
+		p.m2Worker.Run(ctx)
 	}
 }
 
