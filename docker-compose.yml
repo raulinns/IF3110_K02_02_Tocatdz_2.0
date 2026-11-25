@@ -1,4 +1,5 @@
-# PostgreSQL lokal untuk pengembangan dan demo. Database "platform" untuk metadata aplikasi, "demo" sebagai database target.
+# PostgreSQL untuk platform dan database target demo, serta server dan worker aplikasi.
+# Pengembangan lokal cukup `docker compose up postgres`; aplikasi lengkap `docker compose up --build`.
 services:
   postgres:
     image: postgres:17
@@ -15,6 +16,32 @@ services:
       test: ["CMD-SHELL", "pg_isready -U app -d platform"]
       interval: 5s
       retries: 10
+
+  server:
+    build: .
+    command: ["server"]
+    env_file: .env
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: postgres://app:app@postgres:5432/platform?sslmode=disable
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: ["worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://app:app@postgres:5432/platform?sslmode=disable
+      WORKER_CONCURRENCY: "2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      server:
+        condition: service_started
 
 volumes:
   postgres-data:

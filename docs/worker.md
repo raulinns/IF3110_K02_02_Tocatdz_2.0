@@ -67,8 +67,8 @@ Worker memakai `.env` yang sama dengan server, termasuk `DATABASE_URL` dan `CONN
 (kunci keamanan lain tetap divalidasi). Variabel khusus worker: `WORKER_ID` (default `hostname-pid`) dan
 `WORKER_CONCURRENCY` (default 2, rentang 1–64).
 
-> **Status integrasi:** worker menolak start sampai Revalidator domain (DOM-05, lane 13524056) di-wiring
-> lewat `bootstrap.DefaultRevalidator`. Eksekusi tanpa revalidasi setelah lock melanggar spesifikasi.
+Worker juga bisa berjalan di dalam proses server dengan `EMBEDDED_WORKER=true` untuk pengembangan lokal.
+Revalidasi setelah lock memakai `migration.NewRevalidator`; worker menolak start jika revalidator tidak tersedia.
 
 ## Mode batch (K4, B-01 sampai B-03)
 
