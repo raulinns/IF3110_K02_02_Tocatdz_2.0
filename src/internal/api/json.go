@@ -198,12 +198,19 @@ func RequireNoBody(r *http.Request) error {
 // WriteJSON encodes before committing headers. An unsupported value/Secret cannot
 // leave a successful status or half a JSON object containing other sensitive data.
 func WriteJSON(w http.ResponseWriter, status int, value any) error {
+	return writeJSON(w, status, value, 0)
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any, limit int) error {
 	if status < 200 || status > 599 || status == http.StatusNoContent || status == http.StatusNotModified {
 		return security.ErrUnavailable
 	}
 	body, err := json.Marshal(value)
 	if err != nil {
 		return errJSONResponse
+	}
+	if limit > 0 && len(body)+1 > limit {
+		return security.ErrResultTooLarge
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
