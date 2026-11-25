@@ -30,13 +30,14 @@ func (c *integrationClock) Now() time.Time { return c.now }
 // Only persistence and the expensive KDF are faked; session service, token
 // encryption, CSRF, cookies, limiter, middleware and authorization are real.
 type integrationStore struct {
-	mu        sync.Mutex
-	account   security.CredentialRecord
-	sessions  map[security.ID]security.Session
-	access    security.DatabaseAccess
-	lookupErr error
-	createErr error
-	revokeErr error
+	mu               sync.Mutex
+	account          security.CredentialRecord
+	sessions         map[security.ID]security.Session
+	access           security.DatabaseAccess
+	additionalAccess map[security.ID]security.DatabaseAccess
+	lookupErr        error
+	createErr        error
+	revokeErr        error
 }
 
 func (s *integrationStore) FindByUsername(_ context.Context, username string) (security.CredentialRecord, error) {
@@ -138,10 +139,17 @@ func (s *integrationStore) Revoke(_ context.Context, id security.ID, now time.Ti
 func (s *integrationStore) AccessForDatabase(_ context.Context, user, database security.ID) (security.AccessSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if user != s.account.Account.ID || database != testDatabase {
+	if user != s.account.Account.ID {
 		return security.AccessSnapshot{}, security.ErrNotFound
 	}
-	return security.AccessSnapshot{Account: s.account.Account, GroupAccess: []security.DatabaseAccess{s.access}}, nil
+	access, ok := s.additionalAccess[database]
+	if database == testDatabase {
+		access, ok = s.access, true
+	}
+	if !ok {
+		return security.AccessSnapshot{}, security.ErrNotFound
+	}
+	return security.AccessSnapshot{Account: s.account.Account, GroupAccess: []security.DatabaseAccess{access}}, nil
 }
 
 type integrationFixture struct {

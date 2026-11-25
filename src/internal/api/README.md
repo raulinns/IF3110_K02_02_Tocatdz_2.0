@@ -1,8 +1,7 @@
-# JSON API foundation and authentication (API-01, API-02 / SEC-01)
+# JSON API foundation, authentication and explorer
 
-This package implements K1's transport boundary and the authentication endpoints.
-Admin/explorer/workflow endpoints remain separate tasks. No placeholder success
-routes are mounted. Without Auth or custom Routes, the API subtree returns JSON 404.
+This package implements K1's transport boundary, authentication and read-only
+explorer. Without Auth or custom Routes, the API subtree returns JSON 404.
 
 ## Authentication module (API-02)
 
@@ -55,6 +54,28 @@ handler once, avoiding a redundant Authenticate/rotation immediately before
 revocation. Failed login uses actor=anonymous; logout records only the verified
 actor. Log text/error codes exclude raw dependency errors, cookie/CSRF values
 and request bodies. Trace/span fields remain null until TRC instrumentation.
+
+## Explorer module (API-04)
+
+Use the existing explorer and schema-diff services and the target router:
+
+```go
+routes, err := api.ExplorerRoutes(api.ExplorerConfig{
+    Viewer: explorerService,
+    Diff: schemaDiffService,
+    Engines: targetRouter,
+})
+if err != nil { /* fail application startup */ }
+cfg.Routes = append(cfg.Routes, routes...)
+```
+
+The integrator passes `cfg` to `api.New`. The routes all require a session.
+Database listing paginates the authorized catalog in name and ID order. Engine
+capabilities describe database compatibility. The frontend can use them together
+with the user's access level to decide which actions to show. Table and row reads
+use the explorer service's grant checks. Schema comparison requires read access
+to both PostgreSQL targets and returns SQL for review. Query plan remains a
+separate integration with M2 draft and revision storage.
 
 ## Construct and integrate
 

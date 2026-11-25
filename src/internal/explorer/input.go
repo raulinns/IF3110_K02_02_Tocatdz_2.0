@@ -42,25 +42,30 @@ func ParseRowsQuery(schema, table string, values url.Values) (RowsQuery, error) 
 	if !validIdentifier(schema) || !validIdentifier(table) {
 		return RowsQuery{}, security.ErrInvalidInput
 	}
-	query := RowsQuery{Schema: schema, Table: table}
-	for key, target := range map[string]*int{"page": &query.Page, "limit": &query.Limit} {
+	page, limit, _, err := ParsePagination(values)
+	if err != nil {
+		return RowsQuery{}, err
+	}
+	return RowsQuery{Schema: schema, Table: table, Page: page, Limit: limit}, nil
+}
+
+// ParsePagination applies the explorer's shared offsets and bounds.
+// The caller validates the allowed query parameter names.
+func ParsePagination(values url.Values) (int, int, int64, error) {
+	var page, limit int
+	for key, target := range map[string]*int{"page": &page, "limit": &limit} {
 		items, exists := values[key]
 		if !exists {
 			continue
 		}
 		if len(items) != 1 {
-			return RowsQuery{}, security.ErrInvalidInput
+			return 0, 0, 0, security.ErrInvalidInput
 		}
 		value, err := strconv.Atoi(items[0])
 		if err != nil || value <= 0 || strconv.Itoa(value) != items[0] {
-			return RowsQuery{}, security.ErrInvalidInput
+			return 0, 0, 0, security.ErrInvalidInput
 		}
 		*target = value
 	}
-	page, limit, _, err := normalizePagination(query.Page, query.Limit)
-	if err != nil {
-		return RowsQuery{}, err
-	}
-	query.Page, query.Limit = page, limit
-	return query, nil
+	return normalizePagination(page, limit)
 }
