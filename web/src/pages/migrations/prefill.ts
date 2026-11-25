@@ -23,8 +23,3 @@ export function readPrefill(state: unknown): Prefill | null {
   if (!isForm(form) || (source !== 'diff' && source !== 'copy')) return null
   return { form, source, origin: typeof origin === 'string' ? origin : undefined }
 }
-
-// Pesan sekali tampil setelah berpindah halaman, misalnya setelah draft berhasil dibuat
-export function readNotice(state: unknown): string | null {
-  return isObject(state) && typeof state.notice === 'string' ? state.notice : null
-}
