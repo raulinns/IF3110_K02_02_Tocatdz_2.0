@@ -8,14 +8,13 @@ import '@fortawesome/fontawesome-free/css/solid.min.css'
 import './styles/app.css'
 import './styles/shell.css'
 import App from './App.tsx'
-import { isApiError } from './api/errors.ts'
+import { shouldRetryQuery } from './api/retry.ts'
 import { SessionProvider } from './auth/SessionProvider.tsx'
 
-// Hanya gangguan jaringan dan error server yang diulang sedangkan 4xx langsung ditampilkan
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: (count, err) => count < 2 && isApiError(err) && (err.code === 'network' || err.status >= 500),
+      retry: shouldRetryQuery,
       refetchOnWindowFocus: false,
     },
     mutations: { retry: false },
