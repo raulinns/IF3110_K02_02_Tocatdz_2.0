@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { handlers } from '../../mocks/handlers/index.ts'
 import { demoPassword } from '../../mocks/seed.ts'
 import { getState } from '../../mocks/state.ts'
@@ -65,6 +65,17 @@ describe('daftar user', () => {
   })
 })
 
+// Server sungguhan membalas konflik dengan pesan umum sehingga tampilannya tidak boleh bergantung pada teks itu
+function genericConflict(path: string) {
+  const original = globalThis.fetch
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (String(input).includes(path) && init?.method === 'POST') {
+      return new Response(JSON.stringify({ error: { code: 'conflict', message: 'Data atau status berubah, silakan muat ulang', request_id: 'r' } }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+    }
+    return original(input, init)
+  })
+}
+
 describe('tambah user', () => {
   async function fill(user: ReturnType<typeof openAs>['user'], username: string, password: string) {
     await screen.findByRole('table', { name: 'Daftar user' })
@@ -123,6 +134,15 @@ describe('tambah user', () => {
     expect(screen.getByLabelText('Username')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText('Username')).toHaveValue('reviewer')
     expect(screen.getByLabelText('Password awal')).toHaveValue(longPassword)
+  })
+
+  it('konflik dengan pesan server yang umum tetap ditampilkan sebagai username sudah dipakai', async () => {
+    genericConflict('/admin/users')
+    const { user } = openAs('admin', '/admin/users')
+    await fill(user, 'budi', longPassword)
+    await user.click(screen.getByRole('button', { name: 'Tambah user' }))
+    expect(await screen.findByText('Username sudah dipakai')).toBeInTheDocument()
+    expect(screen.queryByText(/Data atau status berubah/)).not.toBeInTheDocument()
   })
 
   it('tombol mata menampilkan dan menyembunyikan password', async () => {

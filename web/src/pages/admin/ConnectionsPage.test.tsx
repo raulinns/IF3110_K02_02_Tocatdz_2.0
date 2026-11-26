@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { handlers } from '../../mocks/handlers/index.ts'
 import { ids } from '../../mocks/ids.ts'
 import { getState } from '../../mocks/state.ts'
@@ -38,6 +38,17 @@ describe('daftar koneksi', () => {
     expect(await screen.findByRole('table', { name: 'Daftar koneksi database' })).toBeInTheDocument()
   })
 })
+
+// Server sungguhan membalas konflik dengan pesan umum sehingga tampilannya tidak boleh bergantung pada teks itu
+function genericConflict(path: string) {
+  const original = globalThis.fetch
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (String(input).includes(path) && init?.method === 'POST') {
+      return new Response(JSON.stringify({ error: { code: 'conflict', message: 'Data atau status berubah, silakan muat ulang', request_id: 'r' } }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+    }
+    return original(input, init)
+  })
+}
 
 describe('tambah koneksi', () => {
   async function fill(user: ReturnType<typeof openAs>['user'], name: string, connection: string) {
@@ -92,6 +103,15 @@ describe('tambah koneksi', () => {
     expect(await screen.findByText('Nama koneksi sudah dipakai')).toBeInTheDocument()
     expect(screen.getByLabelText('Nama tampilan')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText('Connection string')).toHaveValue(dsn)
+  })
+
+  it('konflik dengan pesan server yang umum tetap ditampilkan sebagai nama koneksi sudah dipakai', async () => {
+    genericConflict('/admin/connections')
+    const { user } = openAs('admin', '/admin/connections')
+    await fill(user, 'baru', dsn)
+    await user.click(screen.getByRole('button', { name: 'Simpan koneksi' }))
+    expect(await screen.findByText('Nama koneksi sudah dipakai')).toBeInTheDocument()
+    expect(screen.queryByText(/Data atau status berubah/)).not.toBeInTheDocument()
   })
 
   it('format connection string yang ditolak server ditampilkan pada isiannya', async () => {

@@ -65,8 +65,8 @@ export function CreateUserForm({ onCreated }: CreateUserFormProps) {
         },
         onError: (error) => {
           if (!isApiError(error)) return
-          // Username yang sudah dipakai dikembalikan server sebagai konflik, sehingga ditampilkan di field-nya
-          const taken = error.code === 'conflict' ? errorMessage(error) : undefined
+          // Konflik pada pembuatan berarti username sudah dipakai sehingga pesannya ditentukan di sini karena teks server bersifat umum
+          const taken = error.code === 'conflict' ? 'Username sudah dipakai' : undefined
           const next = { username: fieldError(error, 'username') ?? taken, password: fieldError(error, 'password') }
           setProblems(next)
           if (next.username) usernameRef.current?.focus()
