@@ -173,6 +173,39 @@ describe('monitor job', () => {
     expect(screen.getByRole('button', { name: 'Resume' })).toBeEnabled()
   })
 
+  it('job sebagian yang sudah dipulihkan tidak lagi menawarkan pemulihan karena database tidak ditahan olehnya', async () => {
+    const migration = seedBatchMigration("status = 'arsip' -- mock:partial")
+    const { job } = seedJob(migration)
+    jobOf(job.id).resolved = true
+    openAs('reviewer', monitor(job.id))
+    await waitFor(() => expect(finalStep()).toHaveTextContent('Sebagian'), { timeout: 8000 })
+    expect(await screen.findByText(/sudah dipulihkan sehingga database tidak lagi ditahan/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Revert batches' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/perlu dipulihkan oleh pengguna/)).not.toBeInTheDocument()
+  })
+
+  it('job sebagian yang digantikan job pemulihan menunjuk job yang kini menahan database', async () => {
+    const migration = seedBatchMigration("status = 'arsip' -- mock:partial")
+    const { job } = seedJob(migration)
+    const { job: recovery } = seedJob(migration, 'revert_batches')
+    jobOf(recovery.id).status = 'partially_reverted'
+    openAs('reviewer', monitor(job.id))
+    await waitFor(() => expect(finalStep()).toHaveTextContent('Sebagian'), { timeout: 8000 })
+    const link = await screen.findByRole('link', { name: 'job pemulihan yang kini menahan database' })
+    expect(link).toHaveAttribute('href', monitor(recovery.id))
+    expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument()
+  })
+
+  it('bila posisi database gagal dimuat pemulihan tetap ditawarkan dan server yang menolak bila tidak perlu', async () => {
+    const migration = seedBatchMigration("status = 'arsip' -- mock:partial")
+    const { job } = seedJob(migration)
+    interceptFetch('/position', { failures: 20 })
+    openAs('reviewer', monitor(job.id))
+    await waitFor(() => expect(finalStep()).toHaveTextContent('Sebagian'), { timeout: 8000 })
+    expect(await screen.findByRole('button', { name: 'Resume' }, { timeout: 8000 })).toBeEnabled()
+  })
+
   it('pengguna dengan akses lihat saja diminta menghubungi yang berhak memulihkan', async () => {
     const migration = seedBatchMigration("status = 'arsip' -- mock:partial")
     const { job } = seedJob(migration)

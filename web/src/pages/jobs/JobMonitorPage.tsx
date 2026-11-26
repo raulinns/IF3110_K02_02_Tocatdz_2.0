@@ -11,7 +11,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.tsx'
 import { elapsed, formatDuration } from '../../lib/duration.ts'
 import { formatDateTime } from '../../lib/format.ts'
 import { changeKindLabel, modeLabel } from '../../lib/labels.ts'
-import { historyPath, jobsPath, migrationPath, requestPath } from '../../lib/paths.ts'
+import { historyPath, jobPath, jobsPath, migrationPath, requestPath } from '../../lib/paths.ts'
 import { useDatabase } from '../../lib/useDatabase.ts'
 import { useFlashNotice } from '../../lib/useFlashNotice.ts'
 import { useNow } from '../../lib/useNow.ts'
@@ -63,7 +63,12 @@ export function JobMonitorPage() {
 
   const waited = elapsed(job.queued_at, job.started_at, now)
   const ran = elapsed(job.started_at, job.finished_at, now)
-  const blocking = position.data?.blocked_by_job_id === job.id
+  const blocker = position.data?.blocked_by_job_id
+  const blocking = blocker === job.id
+  // Job partial tetap berstatus partial di server setelah dipulihkan, sehingga perlunya pemulihan ditentukan oleh job yang menahan posisi database
+  // Bila posisi gagal dimuat, tombol pemulihan tetap ditawarkan karena server sendiri yang menolak pemulihan yang tidak perlu
+  const needsRecovery = recoverable && (position.isError || blocking)
+  const recovered = recoverable && position.data !== undefined && !blocking
   const polling = pollDelay(job.status) !== false
 
   return (
@@ -162,8 +167,19 @@ export function JobMonitorPage() {
         {attempts.isError ? <ApiErrorView error={attempts.error} onRetry={() => void attempts.refetch()} /> : <AttemptsTable attempts={attempts.data ?? []} now={now} />}
       </div>
 
-      {recoverable && canEdit && <RecoveryActions db={db} job={job} migration={migration.data} />}
-      {recoverable && !canEdit && <Notice kind="warning">Job ini perlu dipulihkan oleh pengguna dengan akses ubah pada database ini.</Notice>}
+      {needsRecovery && canEdit && <RecoveryActions db={db} job={job} migration={migration.data} />}
+      {needsRecovery && !canEdit && <Notice kind="warning">Job ini perlu dipulihkan oleh pengguna dengan akses ubah pada database ini.</Notice>}
+      {recovered && (
+        <Notice kind="info">
+          {blocker ? (
+            <>
+              Job ini sudah digantikan oleh <Link to={jobPath(db, blocker)}>job pemulihan yang kini menahan database</Link>.
+            </>
+          ) : (
+            'Job ini sudah dipulihkan sehingga database tidak lagi ditahan olehnya.'
+          )}
+        </Notice>
+      )}
       {migration.data && (
         <p className="small">
           <Link to={migrationPath(db, migration.data.id)}>Lihat definisi migration</Link>
