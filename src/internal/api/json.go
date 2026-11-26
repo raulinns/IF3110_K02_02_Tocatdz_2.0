@@ -26,6 +26,7 @@ var (
 // DecodeJSON accepts exactly one UTF-8 object into a pointer to an explicit DTO.
 // It never partially modifies dst on failure. Required/semantic field validation
 // belongs to the domain; use pointer fields where absent differs from false/zero.
+// The json_required:"true" tag checks key presence, including for nullable fields.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	value := reflect.ValueOf(dst)
 	if value.Kind() != reflect.Pointer || value.IsNil() || value.Elem().Kind() != reflect.Struct {
@@ -112,7 +113,7 @@ func inspectValue(decoder *json.Decoder, typ reflect.Type, depth int) error {
 			var child reflect.Type
 			switch typ.Kind() {
 			case reflect.Struct:
-				child = fields[key]
+				child = fields[key].typ
 				if child == nil {
 					return security.ErrMalformedRequest
 				}
@@ -123,6 +124,11 @@ func inspectValue(decoder *json.Decoder, typ reflect.Type, depth int) error {
 			}
 			if err := inspectValue(decoder, child, depth+1); err != nil {
 				return err
+			}
+		}
+		for name, field := range fields {
+			if field.required && !seen[name] {
+				return security.ErrMalformedRequest
 			}
 		}
 		end, err := decoder.Token()
@@ -151,16 +157,18 @@ func inspectValue(decoder *json.Decoder, typ reflect.Type, depth int) error {
 	return nil // json.Decoder performs scalar type/range validation in the second pass.
 }
 
-func jsonFields(typ reflect.Type) map[string]reflect.Type {
-	fields := map[string]reflect.Type{}
+type jsonField struct {
+	typ      reflect.Type
+	required bool
+}
+
+func jsonFields(typ reflect.Type) map[string]jsonField {
+	fields := map[string]jsonField{}
 	if typ.Kind() != reflect.Struct {
 		return fields
 	}
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		if !field.IsExported() {
-			continue
-		}
 		name := strings.Split(field.Tag.Get("json"), ",")[0]
 		if name == "-" {
 			continue
@@ -175,10 +183,13 @@ func jsonFields(typ reflect.Type) map[string]reflect.Type {
 			}
 			continue
 		}
+		if !field.IsExported() {
+			continue
+		}
 		if name == "" {
 			name = field.Name
 		}
-		fields[name] = field.Type
+		fields[name] = jsonField{typ: field.Type, required: field.Tag.Get("json_required") == "true"}
 	}
 	return fields
 }
