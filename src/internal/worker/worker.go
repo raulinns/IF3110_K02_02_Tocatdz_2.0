@@ -163,9 +163,15 @@ func safeText(err error) string {
 func (w *Worker) now() time.Time { return w.cfg.Clock.Now().UTC() }
 
 func (w *Worker) log(ctx context.Context, level slog.Level, event string, lease migration.JobLease, attrs ...any) {
-	base := []any{"event", event, "job_id", string(lease.Job.ID), "database_id", string(lease.Job.DatabaseID),
-		"change_request_id", string(lease.Job.ChangeRequestID), "execution_id", string(lease.Job.ExecutionID),
-		"attempt", lease.Job.Attempt, "request_id", lease.Job.RequestID, "worker", w.cfg.Owner, "actor", "worker:" + w.cfg.Owner}
+	op := logging.OperationFromContext(ctx)
+	op.Actor, op.DatabaseID, op.JobID = "worker:"+w.cfg.Owner, lease.Job.DatabaseID, lease.Job.ID
+	op.ChangeRequestID, op.ExecutionID, op.MigrationID = lease.Job.ChangeRequestID, lease.Job.ExecutionID, lease.Job.MigrationID
+	op.Attempt = lease.Job.Attempt
+	base := []any{}
+	for _, attr := range op.Attrs() {
+		base = append(base, attr)
+	}
+	base = append(base, "event", event, "worker", w.cfg.Owner)
 	w.cfg.Logger.Log(ctx, level, event, append(base, attrs...)...)
 }
 
@@ -228,7 +234,7 @@ func (w *Worker) handle(parent context.Context, lease migration.JobLease) {
 		endLock(false)
 		lockWait := w.now().Sub(waitStart)
 		w.cfg.Observer.LockWait(lockWait)
-		w.log(jobCtx, slog.LevelInfo, "lock.acquired", lease, "lock_wait_ms", lockWait.Milliseconds())
+		w.log(jobCtx, slog.LevelInfo, "lock.acquired", lease, "duration_ms", lockWait.Milliseconds())
 		revalidateCtx, endRevalidation := tracing.Start(locked, "revalidate", tracing.Internal)
 		plan, err := w.cfg.Revalidator.Revalidate(revalidateCtx, lease.Job)
 		endRevalidation(err != nil)
@@ -238,6 +244,10 @@ func (w *Worker) handle(parent context.Context, lease migration.JobLease) {
 				Code: migration.JobErrorRevalidation, Message: "revalidation failed"}})
 			return nil
 		}
+		meta := logging.OperationFromContext(jobCtx)
+		meta.Revision, meta.Direction = plan.Definition.Revision, string(plan.Direction)
+		jobCtx = logging.WithOperation(jobCtx, meta)
+		locked = logging.WithOperation(locked, meta)
 		w.log(jobCtx, slog.LevelInfo, "job.revalidated", lease)
 		if err := w.cfg.Store.StartRunning(locked, lease, plan); err != nil {
 			if errors.Is(err, security.ErrConflict) {
@@ -253,7 +263,7 @@ func (w *Worker) handle(parent context.Context, lease migration.JobLease) {
 			name = "batch.process"
 		}
 		runCtx, endRun := tracing.Start(locked, name, tracing.Internal)
-		meta := logging.OperationFromContext(runCtx)
+		meta = logging.OperationFromContext(runCtx)
 		meta.Revision, meta.Direction, meta.Mutation = plan.Definition.Revision, string(plan.Direction), true
 		runCtx = logging.WithOperation(runCtx, meta)
 		started := w.now()
@@ -404,6 +414,11 @@ func (w *Worker) recover(parent context.Context, lease migration.JobLease) (reso
 	plan, err := w.cfg.Store.RecoveryPlan(ctx, lease.Job.DatabaseID, lease.Job.ID)
 	if err != nil {
 		return false
+	}
+	if plan != nil {
+		op := logging.OperationFromContext(ctx)
+		op.Revision, op.Direction = plan.Definition.Revision, string(plan.Direction)
+		ctx = logging.WithOperation(ctx, op)
 	}
 	var finish outcome
 	if plan == nil {

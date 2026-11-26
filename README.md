@@ -215,6 +215,14 @@ Tanpa `TEST_MYSQL_TARGET_DSN`, test MySQL otomatis dilewati. Workflow `.github/w
 
 Kontrak keamanan dan catatan audit dibagikan terpisah untuk koordinasi kelompok; signature API pada kode Go menjadi acuan implementasi.
 
+## Logging dan tracing
+
+Server dan worker menulis log JSON serta span OpenTelemetry ke stdout. Tracing
+aktif pada build biasa; exporter OTLP/HTTP tambahan dapat dikonfigurasi melalui
+variabel pada `.env.example`. Kontrak field, hasil pengujian, cara merekam ulang
+bukti, dan gate integrasi collector tersedia di
+[dokumentasi logging/tracing](docs/observability/log-trace-examples.md).
+
 ## UI Credits
 
 - Tata letak dan gaya: [Bootstrap Simple Admin Template](https://github.com/alexisbriandev/bootstrap-simple-admin-template) (Apache License 2.0).

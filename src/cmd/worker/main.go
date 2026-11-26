@@ -44,6 +44,7 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
 	logger, flushTraces, err := app.SetupObservability(ctx, "tocatdz-worker")
 	if err != nil {
 		return err

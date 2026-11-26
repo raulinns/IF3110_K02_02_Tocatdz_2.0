@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -24,17 +27,38 @@ func NewOpenTelemetry(ctx context.Context, service string, output io.Writer) (Pr
 	}
 	options := []sdktrace.TracerProviderOption{
 		sdktrace.WithResource(resource.NewSchemaless(attribute.String("service.name", service))),
-		sdktrace.WithBatcher(&consoleExporter{output: json.NewEncoder(output), service: service}),
 	}
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" || os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != "" {
 		exporter, err := otlptracehttp.New(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
 		options = append(options, sdktrace.WithBatcher(exporter))
 	}
+	options = append(options, sdktrace.WithBatcher(&consoleExporter{output: json.NewEncoder(output), service: service}))
 	provider := sdktrace.NewTracerProvider(options...)
 	return otelProvider{tracer: provider.Tracer("tocatdz")}, provider.Shutdown, nil
+}
+
+// StartProcess installs tracing before application resources are opened. Stop
+// application producers first, then call shutdown to flush with a fresh deadline
+// even when the signal context has already been cancelled.
+func StartProcess(ctx context.Context, service string, output io.Writer) (shutdown func() error, err error) {
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(error) {
+		// Export errors can contain endpoint credentials or response bodies.
+		slog.Error("trace export failed", "event", "tracing.export", "status", "failed")
+	}))
+	provider, stop, err := NewOpenTelemetry(ctx, service, output)
+	if err != nil {
+		return nil, err
+	}
+	Install(provider)
+	return func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		defer Install(nil)
+		return stop(ctx)
+	}, nil
 }
 
 type otelProvider struct{ tracer trace.Tracer }
