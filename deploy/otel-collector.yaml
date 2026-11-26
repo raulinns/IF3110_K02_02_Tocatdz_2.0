@@ -1,4 +1,5 @@
-# Menerima OTLP dari server dan worker, meneruskan log ke Loki dan trace ke Tempo.
+# Trace diterima lewat OTLP dari server dan worker. Log aplikasi (JSON di stdout) dibaca dari log Docker
+# milik container ber-tag tocatdz-*; container lain di mesin yang sama diabaikan.
 receivers:
   otlp:
     protocols:
@@ -6,6 +7,26 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+  filelog:
+    include: [/var/lib/docker/containers/*/*-json.log]
+    start_at: end
+    operators:
+      - type: json_parser
+        parse_from: body
+      - type: filter
+        expr: 'attributes.attrs == nil or attributes.attrs.tag == nil or not (attributes.attrs.tag startsWith "tocatdz-")'
+      - type: move
+        from: attributes.attrs.tag
+        to: resource["service.name"]
+      - type: move
+        from: attributes.log
+        to: body
+      - type: remove
+        field: attributes.attrs
+      - type: remove
+        field: attributes.stream
+      - type: remove
+        field: attributes.time
 
 processors:
   batch: {}
@@ -21,7 +42,7 @@ exporters:
 service:
   pipelines:
     logs:
-      receivers: [otlp]
+      receivers: [filelog]
       processors: [batch]
       exporters: [otlphttp/loki]
     traces:
