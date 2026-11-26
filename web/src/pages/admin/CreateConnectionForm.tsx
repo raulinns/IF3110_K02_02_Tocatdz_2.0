@@ -63,7 +63,7 @@ export function CreateConnectionForm({ onCreated }: CreateConnectionFormProps) {
         },
         onError: (error) => {
           if (!isApiError(error)) return
-          const taken = error.code === 'conflict' ? errorMessage(error) : undefined
+          const taken = error.code === 'conflict' ? 'Nama koneksi sudah dipakai' : undefined
           const next = { engine: fieldError(error, 'engine'), name: fieldError(error, 'name') ?? taken, dsn: fieldError(error, 'dsn') }
           setProblems(next)
           if (next.name) nameRef.current?.focus()

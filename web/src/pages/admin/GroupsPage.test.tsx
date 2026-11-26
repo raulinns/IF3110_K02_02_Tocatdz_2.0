@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { handlers } from '../../mocks/handlers/index.ts'
 import { getState } from '../../mocks/state.ts'
 import { setupMockServer } from '../../mocks/testing.ts'
@@ -50,6 +50,17 @@ describe('daftar group', () => {
   })
 })
 
+// Server sungguhan membalas konflik dengan pesan umum sehingga tampilannya tidak boleh bergantung pada teks itu
+function genericConflict(path: string) {
+  const original = globalThis.fetch
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (String(input).includes(path) && init?.method === 'POST') {
+      return new Response(JSON.stringify({ error: { code: 'conflict', message: 'Data atau status berubah, silakan muat ulang', request_id: 'r' } }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+    }
+    return original(input, init)
+  })
+}
+
 describe('buat group', () => {
   it('membuat group dengan nama dipangkas lalu form dikosongkan', async () => {
     const { user } = openAs('admin', '/admin/groups')
@@ -91,6 +102,16 @@ describe('buat group', () => {
     expect(screen.getByLabelText('Nama group')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText('Nama group')).toHaveValue('WRITERS')
     expect(getState().groups).toHaveLength(4)
+  })
+
+  it('konflik dengan pesan server yang umum tetap ditampilkan sebagai nama group sudah dipakai', async () => {
+    genericConflict('/admin/groups')
+    const { user } = openAs('admin', '/admin/groups')
+    await screen.findByRole('table', { name: 'Daftar group' })
+    await user.type(screen.getByLabelText('Nama group'), 'tim-baru')
+    await user.click(screen.getByRole('button', { name: 'Buat group' }))
+    expect(await screen.findByText('Nama group sudah dipakai')).toBeInTheDocument()
+    expect(screen.queryByText(/Data atau status berubah/)).not.toBeInTheDocument()
   })
 
   it('kegagalan jaringan ditampilkan sebagai notifikasi dan isian tetap ada', async () => {

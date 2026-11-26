@@ -47,8 +47,8 @@ export function CreateGroupForm({ onCreated }: CreateGroupFormProps) {
         },
         onError: (error) => {
           if (!isApiError(error)) return
-          // Nama yang sudah dipakai dikembalikan server sebagai konflik sehingga ditampilkan di bawah isiannya
-          const message = fieldError(error, 'name') ?? (error.code === 'conflict' ? errorMessage(error) : undefined)
+          // Konflik pada pembuatan berarti nama sudah dipakai sehingga pesannya ditentukan di sini karena teks server bersifat umum
+          const message = fieldError(error, 'name') ?? (error.code === 'conflict' ? 'Nama group sudah dipakai' : undefined)
           setProblem(message)
           if (message) nameRef.current?.focus()
         },

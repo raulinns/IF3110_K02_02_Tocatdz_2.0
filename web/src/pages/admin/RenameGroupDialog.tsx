@@ -46,7 +46,7 @@ export function RenameGroupDialog({ group, onDone, onClose }: RenameGroupDialogP
       onDone(updated)
       onClose()
     } catch (error) {
-      const message = isApiError(error) ? (fieldError(error, 'name') ?? (error.code === 'conflict' ? errorMessage(error) : undefined)) : undefined
+      const message = isApiError(error) ? (fieldError(error, 'name') ?? (error.code === 'conflict' ? 'Nama group sudah dipakai' : undefined)) : undefined
       setProblem(message)
       setFailure(message ? null : error)
       setPending(false)
