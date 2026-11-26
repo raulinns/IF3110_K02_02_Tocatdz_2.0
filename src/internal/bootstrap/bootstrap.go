@@ -15,6 +15,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	mysqltarget "github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/mysql"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/metrics"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/postgres"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/schemadiff"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
@@ -31,6 +32,7 @@ type Platform struct {
 	m2Worker *worker.Worker
 	targets  *targetdb.Router
 	pool     *pgxpool.Pool
+	metrics  *metrics.Registry
 }
 
 func NewPasswordHasher() (*security.Argon2idHasher, error) {
@@ -173,7 +175,8 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 	if err != nil {
 		return err
 	}
-	if p.m2Worker, err = newM2Worker(workflow, p.targets, clock, logger, "server-embedded", 1); err != nil {
+	p.metrics = newMetrics(p.pool, p.targets, workflow)
+	if p.m2Worker, err = newM2Worker(workflow, p.targets, clock, logger, "server-embedded", 1, p.metrics); err != nil {
 		return err
 	}
 	p.Handler = web.NewRouter(logger, v1, frontend)
@@ -203,6 +206,9 @@ func (p *Platform) RunWorker(ctx context.Context) {
 		p.worker.Run(ctx)
 	}
 }
+
+// MetricsHandler melayani /metrics format Prometheus; alamatnya dipasang terpisah dari API publik.
+func (p *Platform) MetricsHandler() http.Handler { return p.metrics.Handler() }
 
 // RunEmbeddedWorker menjalankan worker M2 di dalam proses server, untuk pengembangan lokal.
 func (p *Platform) RunEmbeddedWorker(ctx context.Context) {

@@ -308,29 +308,41 @@ func TestM2WorkerRunsDifferentDatabasesInParallel(t *testing.T) {
 	w, err := workerWithConcurrency(f, 2)
 	must(t, err)
 	runCtx, cancel := context.WithCancel(ctx)
-	started := time.Now()
 	finished := make(chan struct{})
 	go func() { w.Run(runCtx); close(finished) }()
-	deadline := time.Now().Add(10 * time.Second)
+	var views []migration.JobView
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		done := 0
+		views = views[:0]
 		for database, id := range jobs {
 			job, err := f.store.FindJob(ctx, database, id)
 			must(t, err)
-			if job.Status == migration.JobSucceeded {
-				done++
+			if job.Status == migration.JobSucceeded && job.StartedAt != nil && job.FinishedAt != nil {
+				views = append(views, job)
 			}
 		}
-		if done == len(jobs) {
+		if len(views) == len(jobs) {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	elapsed := time.Since(started)
 	cancel()
 	<-finished
-	if elapsed >= 1900*time.Millisecond {
-		t.Fatalf("two databases took %v; they did not run in parallel", elapsed)
+	if len(views) != len(jobs) {
+		t.Fatalf("only %d of %d jobs finished", len(views), len(jobs))
+	}
+	// Job pada database berbeda berjalan bersamaan jika rentang waktunya tumpang tindih; ini tidak bergantung pada kecepatan mesin.
+	latestStart, earliestFinish := *views[0].StartedAt, *views[0].FinishedAt
+	for _, job := range views[1:] {
+		if job.StartedAt.After(latestStart) {
+			latestStart = *job.StartedAt
+		}
+		if job.FinishedAt.Before(earliestFinish) {
+			earliestFinish = *job.FinishedAt
+		}
+	}
+	if !latestStart.Before(earliestFinish) {
+		t.Fatalf("jobs on different databases did not overlap: latest start %v, earliest finish %v", latestStart, earliestFinish)
 	}
 }
 

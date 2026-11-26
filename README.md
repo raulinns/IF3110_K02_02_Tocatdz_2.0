@@ -153,6 +153,15 @@ Database dan akun MySQL disiapkan terlebih dahulu di luar aplikasi. Akun tersebu
 
 Skema database platform diterapkan otomatis saat server atau seed berjalan (`src/internal/postgres/schema/*.sql`).
 
+## Observability dan stress test
+
+Metrik Prometheus, dashboard Grafana, dan Collector dijalankan dengan
+`docker compose --profile observability up -d --build`; penjelasan metrik dan contoh hasilnya ada di
+[docs/observability/metrics.md](docs/observability/metrics.md).
+
+Untuk stress test k6, seed akun dengan password yang sama dengan `K6_PASSWORD` (isi `SEED_SHARED_PASSWORD`),
+lalu jalankan k6 dengan `LEADER_USERS=admin,pengamat` agar kedua leader menyetujui perubahan pada `demo` dan `gudang`.
+
 ## Akun demo (dari `cmd/seed`)
 
 | Username | Password | Peran |

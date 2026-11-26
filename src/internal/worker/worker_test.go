@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -286,5 +287,50 @@ func TestMutatesKeyDetectsKeyAssignment(t *testing.T) {
 		if got := mutatesKey(fragment, "id"); got != want {
 			t.Fatalf("mutatesKey(%q) = %v, want %v", fragment, got, want)
 		}
+	}
+}
+
+type recorder struct {
+	events []string
+}
+
+func (r *recorder) QueueWait(time.Duration) { r.events = append(r.events, "queue_wait") }
+func (r *recorder) LockWait(time.Duration)  { r.events = append(r.events, "lock_wait") }
+func (r *recorder) RunFinished(migration.ChangeKind, migration.ExecutionMode, time.Duration) {
+	r.events = append(r.events, "run")
+}
+func (r *recorder) JobFinished(status migration.JobStatus, _ migration.ChangeKind, _ migration.ExecutionMode) {
+	r.events = append(r.events, "finished:"+string(status))
+}
+func (r *recorder) Retry(migration.ChangeKind) { r.events = append(r.events, "retry") }
+
+func TestObserverSeesQueueLockRunAndOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result migration.RunResult
+		lease  *migration.JobLease
+		want   []string
+	}{
+		{"success", migration.RunResult{Status: migration.JobSucceeded, Execution: &migration.Execution{}}, leaseAt(1, 3),
+			[]string{"queue_wait", "lock_wait", "run", "finished:succeeded"}},
+		{"retry", failed(migration.JobErrorSQL, "", "40001", true), leaseAt(1, 3), []string{"queue_wait", "lock_wait", "run", "retry"}},
+		{"final failure", failed(migration.JobErrorSQL, "", "42P01", false), leaseAt(1, 3),
+			[]string{"queue_wait", "lock_wait", "run", "finished:failed"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			observer := &recorder{}
+			store := &fakeStore{lease: tc.lease}
+			w, err := New(Config{Store: store, Coordinator: fakeCoordinator{}, Revalidator: fakeRevalidator{}, Runner: fakeRunner{result: tc.result},
+				Clock: security.SystemClock{}, Owner: "test", Observer: observer, Backoff: func(int) time.Duration { return 0 }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := w.ProcessOne(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(observer.events, ","); got != strings.Join(tc.want, ",") {
+				t.Fatalf("events = %s, want %v", got, tc.want)
+			}
+		})
 	}
 }

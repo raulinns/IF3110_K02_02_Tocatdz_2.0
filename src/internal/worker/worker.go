@@ -35,6 +35,7 @@ type Config struct {
 	Revalidator      migration.Revalidator
 	Runner           migration.Runner
 	Progress         migration.ProgressSink
+	Observer         Observer
 	Clock            security.Clock
 	Logger           *slog.Logger
 	Owner            string
@@ -45,6 +46,23 @@ type Config struct {
 	JobTimeout       time.Duration
 	Backoff          func(attempt int) time.Duration
 }
+
+// Observer menerima kejadian untuk metrik. Implementasinya tidak boleh memblokir.
+type Observer interface {
+	QueueWait(d time.Duration)
+	LockWait(d time.Duration)
+	RunFinished(kind migration.ChangeKind, mode migration.ExecutionMode, d time.Duration)
+	JobFinished(status migration.JobStatus, kind migration.ChangeKind, mode migration.ExecutionMode)
+	Retry(kind migration.ChangeKind)
+}
+
+type noObserver struct{}
+
+func (noObserver) QueueWait(time.Duration)                                                        {}
+func (noObserver) LockWait(time.Duration)                                                         {}
+func (noObserver) RunFinished(migration.ChangeKind, migration.ExecutionMode, time.Duration)       {}
+func (noObserver) JobFinished(migration.JobStatus, migration.ChangeKind, migration.ExecutionMode) {}
+func (noObserver) Retry(migration.ChangeKind)                                                     {}
 
 type Worker struct{ cfg Config }
 
@@ -70,6 +88,9 @@ func New(cfg Config) (*Worker, error) {
 	}
 	if cfg.JobTimeout <= 0 {
 		cfg.JobTimeout = DefaultJobTimeout
+	}
+	if cfg.Observer == nil {
+		cfg.Observer = noObserver{}
 	}
 	if cfg.Backoff == nil {
 		cfg.Backoff = DefaultBackoff
@@ -201,6 +222,7 @@ func (w *Worker) handle(parent context.Context, lease migration.JobLease) {
 	failed := true
 	defer func() { endJob(failed) }()
 	w.log(jobCtx, slog.LevelInfo, "job.claimed", lease, "status", "running")
+	w.cfg.Observer.QueueWait(max(w.now().Sub(lease.Job.RunAfter), 0))
 	stop := w.heartbeat(jobCtx, cancel, lease)
 	var finish outcome
 	waitStart := w.now()
@@ -210,7 +232,9 @@ func (w *Worker) handle(parent context.Context, lease migration.JobLease) {
 	lockErr := w.cfg.Coordinator.WithDatabaseLock(lockCtx, lease.Job.DatabaseID, func(locked context.Context, target migration.LockedTarget) error {
 		acquired = true
 		endLock(false)
-		w.log(jobCtx, slog.LevelInfo, "lock.acquired", lease, "duration_ms", w.now().Sub(waitStart).Milliseconds())
+		lockWait := w.now().Sub(waitStart)
+		w.cfg.Observer.LockWait(lockWait)
+		w.log(jobCtx, slog.LevelInfo, "lock.acquired", lease, "duration_ms", lockWait.Milliseconds())
 		revalidateCtx, endRevalidation := tracing.Start(locked, "revalidate", tracing.Internal)
 		plan, err := w.cfg.Revalidator.Revalidate(revalidateCtx, lease.Job)
 		endRevalidation(err != nil)
@@ -242,7 +266,9 @@ func (w *Worker) handle(parent context.Context, lease migration.JobLease) {
 		meta = logging.OperationFromContext(runCtx)
 		meta.Revision, meta.Direction, meta.Mutation = plan.Definition.Revision, string(plan.Direction), true
 		runCtx = logging.WithOperation(runCtx, meta)
+		started := w.now()
 		result, runErr := w.cfg.Runner.Run(runCtx, plan, target, w.cfg.Progress)
+		w.cfg.Observer.RunFinished(lease.Job.Kind, lease.Job.Mode, w.now().Sub(started))
 		failed = runErr != nil || result.Status != migration.JobSucceeded
 		endRun(failed)
 		finish = w.afterRun(lease, result, runErr)
@@ -301,6 +327,7 @@ func (w *Worker) afterRun(lease migration.JobLease, result migration.RunResult, 
 			if err != nil {
 				return err
 			}
+			w.cfg.Observer.JobFinished(migration.JobSucceeded, lease.Job.Kind, lease.Job.Mode)
 			w.log(ctx, slog.LevelInfo, "job.succeeded", lease, "migration_id", string(execution.MigrationID))
 			w.log(historyCtx, slog.LevelInfo, "history.appended", lease, "status", "committed",
 				"migration_id", string(execution.MigrationID), "migration_revision", execution.MigrationRevision)
@@ -324,6 +351,7 @@ func (w *Worker) final(lease migration.JobLease, result migration.RunResult) out
 		if err := w.cfg.Store.RecordOutcome(ctx, lease, result); err != nil {
 			return err
 		}
+		w.cfg.Observer.JobFinished(result.Status, lease.Job.Kind, lease.Job.Mode)
 		w.log(ctx, slog.LevelWarn, "job."+string(result.Status), lease, "status", string(result.Status),
 			"error", errorCode(result.Error), "sqlstate", sqlState(result.Error))
 		return nil
@@ -347,6 +375,7 @@ func (w *Worker) retryOrFail(lease migration.JobLease, failure migration.JobFail
 		if err := w.cfg.Store.ScheduleRetry(ctx, lease, failure, w.now().Add(delay)); err != nil {
 			return err
 		}
+		w.cfg.Observer.Retry(lease.Job.Kind)
 		w.log(ctx, slog.LevelWarn, "job.retry_scheduled", lease, "status", "scheduled",
 			"error", string(failure.Code), "sqlstate", failure.SQLState, "retry_in_ms", delay.Milliseconds())
 		return nil

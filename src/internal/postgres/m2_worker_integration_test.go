@@ -365,3 +365,27 @@ func TestM2WorkerClaimIsExclusive(t *testing.T) {
 		t.Fatalf("second claim = %v", err)
 	}
 }
+
+func TestM2JobStatusCounts(t *testing.T) {
+	f := newWorkerFixture(t)
+	ctx := context.Background()
+	counts, err := f.store.JobStatusCounts(ctx)
+	must(t, err)
+	if len(counts) != 0 {
+		t.Fatalf("counts on an empty queue = %v", counts)
+	}
+	f.approvedJob(t, "", "CREATE TABLE m2_count_ok (id int)", "DROP TABLE m2_count_ok", migration.ChangeApply, "")
+	counts, err = f.store.JobStatusCounts(ctx)
+	must(t, err)
+	if counts[migration.JobQueued] != 1 {
+		t.Fatalf("counts with one queued job = %v", counts)
+	}
+	f.process(t)
+	f.approvedJob(t, "", "SELECT * FROM missing_count_table", "SELECT 1", migration.ChangeApply, "")
+	f.process(t)
+	counts, err = f.store.JobStatusCounts(ctx)
+	must(t, err)
+	if counts[migration.JobSucceeded] != 1 || counts[migration.JobFailed] != 1 || counts[migration.JobQueued] != 0 {
+		t.Fatalf("counts after two jobs = %v", counts)
+	}
+}

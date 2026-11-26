@@ -22,14 +22,16 @@ type databasePool interface{ Close() }
 type databaseOpener func(context.Context, platformdb.Config) (databasePool, error)
 
 type applicationResources struct {
-	platform *bootstrap.Platform
-	stop     context.CancelFunc
-	done     <-chan struct{}
+	platform    *bootstrap.Platform
+	stop        context.CancelFunc
+	done        <-chan struct{}
+	stopMetrics func()
 }
 
 func (r *applicationResources) Close() {
 	r.stop()
 	<-r.done
+	r.stopMetrics()
 	r.platform.Close()
 }
 
@@ -90,6 +92,7 @@ func run() error {
 			return nil, err
 		}
 		server.Handler = platform.Handler
+		stopMetrics := app.ServeMetrics(os.Getenv("METRICS_ADDR"), platform.MetricsHandler(), logger)
 		workerCtx, stopWorker := context.WithCancel(ctx)
 		done := make(chan struct{})
 		embedded := os.Getenv("EMBEDDED_WORKER") == "true"
@@ -104,7 +107,7 @@ func run() error {
 			platform.RunWorker(workerCtx)
 			<-finished
 		}()
-		return &applicationResources{platform: platform, stop: stopWorker, done: done}, nil
+		return &applicationResources{platform: platform, stop: stopWorker, done: done, stopMetrics: stopMetrics}, nil
 	})
 }
 
