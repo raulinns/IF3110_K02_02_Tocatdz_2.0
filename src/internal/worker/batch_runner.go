@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"slices"
 	"strconv"
@@ -12,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/logging"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/tracing"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/targetbatch"
 )
@@ -200,7 +203,21 @@ func (r *BatchRunner) Run(ctx context.Context, plan migration.ExecutionPlan, tar
 	return r.runDown(ctx, job, sink, started)
 }
 
-func (r *BatchRunner) commitBatch(ctx context.Context, job batchJob, statement string, args []any, build func(keys []int64) targetbatch.Checkpoint) (targetbatch.Checkpoint, *migration.RunResult, error) {
+func (r *BatchRunner) commitBatch(ctx context.Context, job batchJob, batch int64, statement string, args []any, build func(keys []int64) targetbatch.Checkpoint) (targetbatch.Checkpoint, *migration.RunResult, error) {
+	op := logging.OperationFromContext(ctx)
+	op.Batch = batch
+	ctx = logging.WithOperation(ctx, op)
+	name := "batch"
+	if job.direction == targetbatch.Down {
+		name = "batch.revert"
+	}
+	ctx, end := tracing.Start(ctx, name, tracing.Internal)
+	batchFailed := true
+	defer func() { end(batchFailed) }()
+	logger := logging.FromContext(ctx)
+	if logger != nil {
+		logger.LogAttrs(ctx, slog.LevelInfo, "Batch started", append(op.Attrs(), slog.String("event", name+".start"), slog.String("status", "start"))...)
+	}
 	tx, err := job.target.BeginBatch(ctx)
 	if err != nil {
 		result := failed(migration.JobErrorConnection, "cannot begin batch transaction", "", true)
@@ -212,6 +229,9 @@ func (r *BatchRunner) commitBatch(ctx context.Context, job batchJob, statement s
 		if err := tx.Rollback(cleanup); err != nil {
 			unknown := uncertain("batch rollback outcome unknown")
 			return targetbatch.Checkpoint{}, &unknown, migration.ErrExecutionUncertain
+		}
+		if logger != nil {
+			logger.LogAttrs(ctx, slog.LevelWarn, "Batch rolled back", append(op.Attrs(), slog.String("event", name+".rollback"), slog.String("status", "rolled_back"))...)
 		}
 		return targetbatch.Checkpoint{}, &result, nil
 	}
@@ -226,6 +246,11 @@ func (r *BatchRunner) commitBatch(ctx context.Context, job batchJob, statement s
 	if err := tx.Commit(ctx); err != nil {
 		unknown := uncertain("batch commit outcome unknown")
 		return targetbatch.Checkpoint{}, &unknown, migration.ErrExecutionUncertain
+	}
+	batchFailed = false
+	if logger != nil {
+		logger.LogAttrs(ctx, slog.LevelInfo, "Batch committed", append(op.Attrs(), slog.String("event", name+".commit"),
+			slog.String("status", "committed"), slog.Int64("rows", checkpoint.Rows))...)
 	}
 	return checkpoint, nil, nil
 }
@@ -262,7 +287,7 @@ func (r *BatchRunner) runUp(ctx context.Context, job batchJob, sink migration.Pr
 		}
 		batch++
 		from := cursor
-		checkpoint, stop, err := r.commitBatch(ctx, job, statement, []any{from, *scope, job.config.BatchSize}, func(keys []int64) targetbatch.Checkpoint {
+		checkpoint, stop, err := r.commitBatch(ctx, job, batch, statement, []any{from, *scope, job.config.BatchSize}, func(keys []int64) targetbatch.Checkpoint {
 			to := *scope
 			if len(keys) > 0 {
 				to = slices.Max(keys)
@@ -325,7 +350,7 @@ func (r *BatchRunner) runDown(ctx context.Context, job batchJob, sink migration.
 			if ctx.Err() != nil {
 				return stopped(targetbatch.Down, done, failed(migration.JobErrorInterrupted, "batch revert interrupted", "", true)), nil
 			}
-			checkpoint, stop, err := r.commitBatch(ctx, job, statement, []any{source.Keys}, func(keys []int64) targetbatch.Checkpoint {
+			checkpoint, stop, err := r.commitBatch(ctx, job, source.Batch, statement, []any{source.Keys}, func(keys []int64) targetbatch.Checkpoint {
 				return targetbatch.Checkpoint{ExecutionID: job.namespace, Direction: targetbatch.Down, Batch: source.Batch, From: source.From,
 					To: source.To, ScopeMax: source.ScopeMax, Rows: int64(len(keys)), Keys: keys}
 			})
