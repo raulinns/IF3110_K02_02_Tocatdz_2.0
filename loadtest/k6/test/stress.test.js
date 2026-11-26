@@ -155,6 +155,78 @@ describe('stress.js', () => {
     assert.equal(backend.state.logins, before + 1)
   })
 
+  it('login yang dibatasi server ditunggu sesuai Retry-After lalu diulang sampai berhasil', async () => {
+    const { module, backend } = await load({ SCENARIOS: 'reads', SESSIONS_PER_ACCOUNT: '2' }, { loginRateLimits: 2 })
+    const data = module.setup()
+    assert.equal(data.sessions.editor.length, 2)
+    assert.equal(backend.state.logins, 2)
+    // Dua penolakan masing-masing menunggu 2 detik pada jam buatan
+    assert.ok(backend.clock.t >= 4000)
+  })
+
+  it('login yang terus dibatasi menyerah setelah tiga percobaan dengan pesan yang jelas', async () => {
+    const { module } = await load({ SCENARIOS: 'reads' }, { loginRateLimits: 99 })
+    assert.throws(() => module.setup(), /login editor gagal/)
+  })
+
+  it('setup diberi batas waktu yang cukup untuk menunggu pembatas login', async () => {
+    const { module } = await load()
+    assert.equal(module.options.setupTimeout, '5m')
+  })
+
+  // Permintaan sisa dibuat langsung di state backend palsu seolah-olah dari run k6 sebelumnya yang terganggu
+  const approvals = (decisions) => [
+    { group_id: 'g-writers', leader_user_id: 'u-reviewer', decision: decisions[0] },
+    { group_id: 'g-readers', leader_user_id: 'u-observer', decision: decisions[1] },
+  ]
+  const leftover = (backend, { title, status, decisions, database = 'db-1' }) => {
+    backend.state.migrations.push({ id: `mig-${title}`, database_id: database, revision: 1, title })
+    backend.state.requests.push({ id: `cr-${title}`, database_id: database, migration_id: `mig-${title}`, revision: 1 + decisions.filter(Boolean).length, kind: 'apply', status, approvals: approvals(decisions) })
+  }
+  const LEADERS = { LEADER_USERS: 'reviewer,observer' }
+
+  it('setup menjalankan permintaan approved milik k6 yang tertinggal sehingga database tidak lagi ditahan', async () => {
+    const { module, backend } = await load({ ...LEADERS }, { runMs: 1000, queueMs: 200 })
+    leftover(backend, { title: 'k6 k6_lama', status: 'approved', decisions: ['approve', 'approve'] })
+    const data = module.setup()
+    assert.equal(backend.state.jobs.length, 1)
+    assert.equal(backend.state.jobs[0].change_request_id, 'cr-k6 k6_lama')
+    assert.equal(backend.state.requests.find((request) => request.id === 'cr-k6 k6_lama').status, 'queued')
+    // Database kini bebas sehingga satu iterasi job berhasil tanpa konflik
+    module.jobs(data)
+    assert.equal(backend.state.requests.length, 2)
+  })
+
+  it('setup melanjutkan permintaan k6 yang baru disetujui sebagian lalu menjalankannya', async () => {
+    const { module, backend } = await load({ ...LEADERS }, { runMs: 1000, queueMs: 200 })
+    leftover(backend, { title: 'k6 k6_sebagian', status: 'pending_review', decisions: ['approve', null] })
+    module.setup()
+    const request = backend.state.requests[0]
+    assert.deepEqual(request.approvals.map((approval) => approval.decision), ['approve', 'approve'])
+    assert.equal(backend.state.jobs.length, 1)
+  })
+
+  it('setup menolak menyentuh permintaan terbuka yang bukan milik k6 dan menjelaskan penyebabnya', async () => {
+    const { module, backend } = await load({ ...LEADERS })
+    leftover(backend, { title: 'Migration milik tim', status: 'approved', decisions: ['approve', 'approve'] })
+    assert.throws(() => module.setup(), /ditahan permintaan cr-Migration milik tim \(approved\) yang bukan milik k6/)
+    assert.equal(backend.state.jobs.length, 0)
+  })
+
+  it('setup tidak mengurus permintaan yang sudah selesai dan tidak membuat job tambahan', async () => {
+    const { module, backend } = await load({ ...LEADERS })
+    leftover(backend, { title: 'k6 selesai', status: 'succeeded', decisions: ['approve', 'approve'] })
+    module.setup()
+    assert.equal(backend.state.jobs.length, 0)
+  })
+
+  it('mode baca saja tidak menyelesaikan permintaan apa pun', async () => {
+    const { module, backend } = await load({ SCENARIOS: 'reads' })
+    leftover(backend, { title: 'k6 k6_lama', status: 'approved', decisions: ['approve', 'approve'] })
+    module.setup()
+    assert.equal(backend.state.jobs.length, 0)
+  })
+
   it('SESSIONS_PER_ACCOUNT mengatur jumlah sesi per akun dan dibatasi antara 1 dan 5 sesuai batas login server', async () => {
     const counts = {}
     for (const value of ['2', '9', '0', 'banyak', '3.7']) {

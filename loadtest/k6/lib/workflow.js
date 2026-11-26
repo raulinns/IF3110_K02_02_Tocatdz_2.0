@@ -52,9 +52,11 @@ function submit(deps, plan, table) {
 }
 
 // Setiap leader yang relevan memutuskan dengan sesinya sendiri dan revision terbaru dari respons sebelumnya
-function approve(deps, plan, request) {
+export function approve(deps, plan, request) {
   let current = request
   for (const approval of request.approvals) {
+    // Keputusan yang sudah tercatat dilewati supaya permintaan yang setengah disetujui bisa dilanjutkan
+    if (approval.decision) continue
     const leader = Object.values(plan.leaders).find((session) => session.user?.id === approval.leader_user_id)
     if (!leader) return { error: 'leader_unavailable' }
     const res = call(deps, plan, leader, 'POST', `/databases/${plan.database.id}/change-requests/${request.id}/approvals`, {
@@ -69,7 +71,7 @@ function approve(deps, plan, request) {
   return current.status === 'approved' ? { request: current } : { error: 'approval_failed' }
 }
 
-function execute(deps, plan, request) {
+export function execute(deps, plan, request) {
   const res = call(deps, plan, plan.editor, 'POST', `/databases/${plan.database.id}/change-requests/${request.id}/execute`, {
     body: { revision: request.revision },
     name: 'POST /databases/{id}/change-requests/{id}/execute',
