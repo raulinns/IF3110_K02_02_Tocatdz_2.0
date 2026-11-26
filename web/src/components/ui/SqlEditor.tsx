@@ -5,6 +5,7 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { Compartment, EditorState } from '@codemirror/state'
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers, placeholder as placeholderText } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
+import { readNonce } from '../../lib/csp.ts'
 
 // Warna diambil dari variabel CSS sehingga editor ikut berganti saat tema gelap atau terang dipilih
 const theme = EditorView.theme({
@@ -62,6 +63,8 @@ export default function SqlEditor({ value, onChange, readOnly = false, labelledB
 
   useEffect(() => {
     const { state, attrs } = flexible.current
+    // Gaya editor disuntikkan sebagai tag style sehingga CSP server hanya mengizinkannya bila membawa nonce halaman
+    const nonce = readNonce()
     const editor = new EditorView({
       parent: host.current ?? undefined,
       state: EditorState.create({
@@ -76,6 +79,7 @@ export default function SqlEditor({ value, onChange, readOnly = false, labelledB
           sql({ dialect: PostgreSQL }),
           highlight,
           theme,
+          nonce ? EditorView.cspNonce.of(nonce) : [],
           placeholder ? placeholderText(placeholder) : [],
           state.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
           attrs.of(attributes({ labelledBy, describedBy, invalid, readOnly })),
