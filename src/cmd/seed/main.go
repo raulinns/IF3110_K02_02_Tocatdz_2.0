@@ -60,7 +60,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	adminPassword := security.NewSecret(os.Getenv("SEED_ADMIN_PASSWORD"))
+	adminPassword := security.NewSecret(passwordFor("SEED_ADMIN_PASSWORD"))
 	if err := security.ValidateNewPassword(adminPassword); err != nil {
 		return errors.New("SEED_ADMIN_PASSWORD wajib diisi, minimal 15 karakter")
 	}
@@ -94,7 +94,7 @@ func run() error {
 		{"SEED_VIEWER_PASSWORD", "pengamat", &input.ViewerHash, &input.ViewerUsername},
 		{"SEED_EDITOR_PASSWORD", "editor", &input.EditorHash, &input.EditorUsername},
 	} {
-		password := security.NewSecret(os.Getenv(account.env))
+		password := security.NewSecret(passwordFor(account.env))
 		if password.Empty() {
 			continue
 		}
@@ -143,6 +143,14 @@ func run() error {
 		return nil
 	}
 	return postgres.Seed(ctx, pool, box, security.NewTokenGenerator(), input)
+}
+
+// SEED_SHARED_PASSWORD dipakai untuk akun yang passwordnya tidak diisi sendiri, misalnya agar sama dengan K6_PASSWORD.
+func passwordFor(name string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return os.Getenv("SEED_SHARED_PASSWORD")
 }
 
 func valueOr(value, fallback string) string {
