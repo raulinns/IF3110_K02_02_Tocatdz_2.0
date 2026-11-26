@@ -1,0 +1,23 @@
+--- a/src/internal/security/auth_service.go
++++ b/src/internal/security/auth_service.go
+@@ -291,7 +291,8 @@
+ 			}
+ 		}
+ 		var token Secret
+-		if elevated || !previous && !now.Before(replacement.RotatedAt.Add(s.deps.Policy.RotationInterval)) {
++		rotate := elevated || !previous && !now.Before(replacement.RotatedAt.Add(s.deps.Policy.RotationInterval))
++		if rotate {
+ 			if replacement.Generation == ^uint64(0) {
+ 				return SessionResult{}, ErrUnauthenticated
+ 			}
+@@ -329,6 +330,10 @@
+ 		if err != nil {
+ 			return SessionResult{}, err
+ 		}
++		// Eksperimen: tanpa rotasi dan dengan last_seen yang masih baru, session tidak ditulis sehingga request paralel tidak berebut baris yang sama.
++		if !rotate && now.Sub(snapshot.Session.LastSeenAt) < 30*time.Second {
++			return result, nil
++		}
+ 		// Saat konflik, baca ulang token awal agar rotasi atau logout dari request lain tetap dihormati.
+ 		err = s.deps.Sessions.Advance(ctx, digest, replacement, snapshot.Session.Revision, snapshot.Account.AuthVersion, s.deps.Policy)
+ 		if errors.Is(err, ErrConflict) {

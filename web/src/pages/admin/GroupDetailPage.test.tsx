@@ -6,7 +6,7 @@ import { ids } from '../../mocks/ids.ts'
 import { getState } from '../../mocks/state.ts'
 import { setupMockServer } from '../../mocks/testing.ts'
 import { openAs } from '../../test/app.tsx'
-import { interceptFetch } from '../../test/network.ts'
+import { interceptFetch, rejectRequest } from '../../test/network.ts'
 
 setupMockServer(...handlers)
 
@@ -233,6 +233,25 @@ describe('ganti nama dan hapus', () => {
     expect(flashed).toBe(false)
     expect(getState().groups.some((candidate) => candidate.id === ids.writers)).toBe(false)
     expect(getState().grants.some((grant) => grant.group_id === ids.writers)).toBe(false)
+  })
+
+  it('hapus group yang masih ditunggu pekerjaan ditolak server dengan penjelasan di dalam dialog', async () => {
+    rejectRequest('DELETE', '/admin/groups/{id}'.replace('{id}', ids.writers), 409, 'conflict')
+    const { user } = openAs('admin', `/admin/groups/${ids.writers}`)
+    await user.click(await screen.findByRole('button', { name: 'Hapus group' }))
+    const dialog = screen.getByRole('dialog', { name: 'Hapus group' })
+    await user.click(within(dialog).getByRole('button', { name: 'Hapus group' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Tidak dapat dihapus karena masih ada permintaan, job, atau eksekusi yang belum selesai')
+    expect(group(ids.writers)).toBeDefined()
+  })
+
+  it('mengeluarkan anggota yang masih ditunggu pekerjaan ditolak server dengan penjelasan', async () => {
+    rejectRequest('DELETE', '/members/', 409, 'conflict')
+    const { user } = openAs('admin', `/admin/groups/${ids.writers}`)
+    await user.click(within(await rowOf('writers', 'editor')).getByRole('button', { name: 'Keluarkan' }))
+    const dialog = screen.getByRole('dialog', { name: 'Keluarkan anggota' })
+    await user.click(within(dialog).getByRole('button', { name: 'Keluarkan' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Tidak dapat dihapus karena masih ada permintaan, job, atau eksekusi yang belum selesai')
   })
 
   it('membatalkan hapus tidak menghapus group', async () => {

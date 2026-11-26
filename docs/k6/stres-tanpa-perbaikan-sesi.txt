@@ -1,0 +1,125 @@
+     execution: local
+        script: /scripts/stress.js
+        output: -
+     scenarios: (100.00%) 2 scenarios, 96 max VUs, 9m30s max duration (incl. graceful stop):
+
+  █ THRESHOLDS 
+
+    http_req_duration{kind:read}
+    ✗ 'p(95)<500' p(95)=6.8s
+
+    http_req_failed
+    ✗ 'rate<0.01' rate=25.29%
+
+    job_success
+    ✗ 'rate>0.95' rate=39.60%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 4559   9.394447/s
+    checks_succeeded...: 69.77% 3181 out of 4559
+    checks_failed......: 30.22% 1378 out of 4559
+
+    ✗ GET /databases/{id}/schema 200
+      ↳  72% — ✓ 325 / ✗ 126
+    ✗ GET /databases/{id}/executions 200
+      ↳  71% — ✓ 389 / ✗ 157
+    ✗ GET /databases/{id}/migrations 200
+      ↳  71% — ✓ 362 / ✗ 146
+    ✗ GET /databases/{id}/executions hide_rollback 200
+      ↳  72% — ✓ 377 / ✗ 146
+    ✗ GET /databases/{id}/tables/{schema}/{table}/rows 200
+      ↳  68% — ✓ 345 / ✗ 159
+    ✗ GET /databases/{id}/change-requests 200
+      ↳  71% — ✓ 356 / ✗ 145
+    ✗ GET /databases/{id}/jobs 200
+      ↳  71% — ✓ 365 / ✗ 149
+    ✗ GET /databases/{id}/position 200
+      ↳  70% — ✓ 359 / ✗ 150
+    ✗ GET /databases 200
+      ↳  60% — ✓ 303 / ✗ 200
+
+    CUSTOM
+    flow_errors.......................: 61      0.125699/s
+    job_duration_ms...................: avg=863.25ms min=363ms    med=904ms    p(90)=1.03s    p(95)=1.15s    p(99)=1.32s   max=1.36s 
+      { stage:tahap1-x1 }.............: avg=840.6ms  min=363ms    med=854.5ms  p(90)=1.07s    p(95)=1.2s     p(99)=1.33s   max=1.36s 
+      { stage:tahap2-x2 }.............: avg=931.2ms  min=803ms    med=932.5ms  p(90)=1.02s    p(95)=1.02s    p(99)=1.02s   max=1.02s 
+      { stage:tahap3-x4 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+      { stage:tahap4-x8 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+      { stage:tahap5-x1 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+    job_e2e_ms........................: avg=2.18s    min=1.45s    med=2s       p(90)=3.34s    p(95)=3.43s    p(99)=3.57s   max=3.65s 
+      { stage:tahap1-x1 }.............: avg=2.04s    min=1.45s    med=1.88s    p(90)=2.72s    p(95)=3.32s    p(99)=3.42s   max=3.45s 
+      { stage:tahap2-x2 }.............: avg=2.58s    min=1.67s    med=2.49s    p(90)=3.45s    p(95)=3.55s    p(99)=3.63s   max=3.65s 
+      { stage:tahap3-x4 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+      { stage:tahap4-x8 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+      { stage:tahap5-x1 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+    job_queue_wait_ms.................: avg=582.2ms  min=209ms    med=538ms    p(90)=933.1ms  p(95)=1.06s    p(99)=1.14s   max=1.16s 
+      { stage:tahap1-x1 }.............: avg=585.83ms min=209ms    med=538ms    p(90)=943.2ms  p(95)=1.09s    p(99)=1.15s   max=1.16s 
+      { stage:tahap2-x2 }.............: avg=571.29ms min=319ms    med=542.5ms  p(90)=762.99ms p(95)=861.99ms p(99)=941.2ms max=961ms 
+      { stage:tahap3-x4 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+      { stage:tahap4-x8 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+      { stage:tahap5-x1 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+    job_success.......................: 39.60%  40 out of 101
+      { stage:tahap1-x1 }.............: 100.00% 30 out of 30
+      { stage:tahap2-x2 }.............: 62.50%  10 out of 16
+      { stage:tahap3-x4 }.............: 0.00%   0 out of 10
+      { stage:tahap4-x8 }.............: 0.00%   0 out of 26
+      { stage:tahap5-x1 }.............: 0.00%   0 out of 19
+    jobs_completed....................: 40      0.082426/s
+      { stage:tahap1-x1 }.............: 30      0.061819/s
+      { stage:tahap2-x2 }.............: 10      0.020606/s
+      { stage:tahap3-x4 }.............: 0       0/s
+      { stage:tahap4-x8 }.............: 0       0/s
+      { stage:tahap5-x1 }.............: 0       0/s
+    jobs_failed.......................: 0       0/s
+      { stage:tahap1-x1 }.............: 0       0/s
+      { stage:tahap2-x2 }.............: 0       0/s
+      { stage:tahap3-x4 }.............: 0       0/s
+      { stage:tahap4-x8 }.............: 0       0/s
+      { stage:tahap5-x1 }.............: 0       0/s
+    submit_conflicts..................: 613     1.263171/s
+      { stage:tahap1-x1 }.............: 2       0.004121/s
+      { stage:tahap2-x2 }.............: 60      0.123638/s
+      { stage:tahap3-x4 }.............: 132     0.272004/s
+      { stage:tahap4-x8 }.............: 138     0.284368/s
+      { stage:tahap5-x1 }.............: 281     0.579039/s
+    submit_wait_ms....................: avg=1.06s    min=223ms    med=656.5ms  p(90)=2.99s    p(95)=4.27s    p(99)=4.94s   max=5.13s 
+      { stage:tahap1-x1 }.............: avg=609.16ms min=223ms    med=470ms    p(90)=843ms    p(95)=854.5ms  p(99)=2.61s   max=3.37s 
+      { stage:tahap2-x2 }.............: avg=2.34s    min=688ms    med=1.71s    p(90)=4.67s    p(95)=4.9s     p(99)=5.08s   max=5.13s 
+      { stage:tahap3-x4 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+      { stage:tahap4-x8 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+      { stage:tahap5-x1 }.............: avg=0s       min=0s       med=0s       p(90)=0s       p(95)=0s       p(99)=0s      max=0s    
+
+    HTTP
+    http_req_duration.................: avg=2.58s    min=59.53ms  med=1.75s    p(90)=5.89s    p(95)=6.78s    p(99)=9.74s   max=11.09s
+      { expected_response:true }......: avg=2.15s    min=59.53ms  med=1.24s    p(90)=5.78s    p(95)=7.45s    p(99)=9.85s   max=11.01s
+      { kind:read,stage:tahap1-x1 }...: avg=479.27ms min=158.02ms med=437.72ms p(90)=712.72ms p(95)=833.64ms p(99)=1.03s   max=1.17s 
+      { kind:read,stage:tahap2-x2 }...: avg=1.2s     min=207.39ms med=1.17s    p(90)=1.81s    p(95)=1.97s    p(99)=2.59s   max=2.99s 
+      { kind:read,stage:tahap3-x4 }...: avg=2.6s     min=674.89ms med=2.48s    p(90)=3.8s     p(95)=4.21s    p(99)=4.5s    max=5.06s 
+      { kind:read,stage:tahap4-x8 }...: avg=5.95s    min=2.45s    med=5.73s    p(90)=8.31s    p(95)=9.61s    p(99)=10.43s  max=11.09s
+      { kind:read,stage:tahap5-x1 }...: avg=2.21s    min=160.83ms med=1.19s    p(90)=5.76s    p(95)=6.49s    p(99)=9.13s   max=10.86s
+      { kind:read }...................: avg=2.65s    min=158.02ms med=1.88s    p(90)=5.92s    p(95)=6.8s     p(99)=9.83s   max=11.09s
+    http_req_failed...................: 25.29%  1412 out of 5582
+      { stage:tahap1-x1 }.............: 1.26%   13 out of 1029
+      { stage:tahap2-x2 }.............: 15.92%  178 out of 1118
+      { stage:tahap3-x4 }.............: 33.00%  406 out of 1230
+      { stage:tahap4-x8 }.............: 54.13%  668 out of 1234
+      { stage:tahap5-x1 }.............: 15.42%  147 out of 953
+    http_reqs.........................: 5582    11.50248/s
+      { stage:tahap1-x1 }.............: 1029    2.120396/s
+      { stage:tahap2-x2 }.............: 1118    2.303793/s
+      { stage:tahap3-x4 }.............: 1230    2.534584/s
+      { stage:tahap4-x8 }.............: 1234    2.542827/s
+      { stage:tahap5-x1 }.............: 953     1.963788/s
+
+    EXECUTION
+    iteration_duration................: avg=3.85s    min=411.81ms med=2.48s    p(90)=6.52s    p(95)=7.82s    p(99)=10.86s  max=2m25s 
+    iterations........................: 4660    9.602572/s
+    vus...............................: 1       min=0            max=96
+    vus_max...........................: 96      min=96           max=96
+
+    NETWORK
+    data_received.....................: 49 MB   102 kB/s
+    data_sent.........................: 1.7 MB  3.5 kB/s
+k6 exit=99

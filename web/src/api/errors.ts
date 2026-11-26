@@ -55,6 +55,14 @@ export function isApiError(err: unknown): err is ApiError {
   return err instanceof ApiError
 }
 
+// Konflik tanpa reason diganti penjelasan yang sesuai konteks, karena pesan server hanya "Data atau status berubah"
+export function explainConflict(message: string) {
+  return (error: unknown): never => {
+    if (isApiError(error) && error.code === 'conflict' && error.reason === undefined) throw new ApiError({ status: error.status, code: error.code, message, requestId: error.requestId, fields: error.fields })
+    throw error
+  }
+}
+
 // Server nyata membalas konflik hanya dengan kode umum tanpa reason, sehingga konflik tanpa reason dianggap data yang sudah basi
 export function isStaleConflict(err: unknown, staleReasons: ReadonlySet<string>): boolean {
   if (!isApiError(err)) return false

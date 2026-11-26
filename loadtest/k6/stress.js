@@ -4,6 +4,7 @@ import http from 'k6/http'
 import { Counter, Rate, Trend } from 'k6/metrics'
 import { createClient } from './lib/client.js'
 import { loadConfig } from './lib/config.js'
+import { drainOpenRequests } from './lib/drain.js'
 import { readOnce } from './lib/reads.js'
 import { scenarioStages, stageAt, stageLabels } from './lib/stages.js'
 import { buildThresholds } from './lib/thresholds.js'
@@ -48,6 +49,8 @@ if (withJobs) {
 
 export const options = {
   scenarios,
+  // Setup bisa menunggu pembatas login server sehingga batas bawaan 60 detik tidak cukup
+  setupTimeout: '5m',
   thresholds: buildThresholds(config, stageLabels(config.multipliers)),
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
 }
@@ -83,12 +86,23 @@ function pickDatabases(items) {
   return named.slice(0, config.sameDb ? 1 : config.dbCount)
 }
 
+// Login yang dibatasi server (429) menunggu sesuai Retry-After lalu diulang, karena batas per akun per menit bisa sudah terpakai oleh run sebelumnya
+function loginWithRetry(session, failure) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = client.login(session)
+    if (res.status === 200) return
+    if (res.status !== 429) break
+    sleep(Number(res.headers['Retry-After']) || 60)
+  }
+  fail(failure)
+}
+
 // Satu akun masuk beberapa kali sekaligus supaya VU tidak berebut satu sesi, dan jumlahnya dibatasi di bawah batas login server per menit
 function loginPool(username, failure) {
   const live = []
   for (let index = 0; index < config.sessionsPerAccount; index++) {
     const session = client.newSession(username, config.passwordFor(username))
-    if (client.login(session).status !== 200) fail(failure)
+    loginWithRetry(session, failure)
     live.push(session)
   }
   return { first: live[0], saved: live.map((session) => client.exportSession(session)) }
@@ -99,8 +113,13 @@ export function setup() {
   const editorPool = loginPool(config.editor, `login ${config.editor} gagal, periksa EDITOR_USER dan kata sandinya (K6_PASSWORD atau K6_PASSWORD_<USERNAME>)`)
   const editor = editorPool.first
   saved[config.editor] = editorPool.saved
+  const leaders = {}
   if (withJobs) {
-    for (const name of config.leaders) saved[name] = loginPool(name, `login leader ${name} gagal, periksa LEADER_USERS dan kata sandinya (K6_PASSWORD atau K6_PASSWORD_<USERNAME>)`).saved
+    for (const name of config.leaders) {
+      const pool = loginPool(name, `login leader ${name} gagal, periksa LEADER_USERS dan kata sandinya (K6_PASSWORD atau K6_PASSWORD_<USERNAME>)`)
+      saved[name] = pool.saved
+      leaders[name] = pool.first
+    }
   }
   const list = client.request(editor, 'GET', '/databases?page=1&limit=200', { name: 'GET /databases' })
   if (list.status !== 200) fail(`daftar database gagal dengan status ${list.status}`)
@@ -110,6 +129,13 @@ export function setup() {
     const schema = client.request(editor, 'GET', `/databases/${database.id}/schema`, { name: 'GET /databases/{id}/schema' })
     const first = schema.status === 200 ? client.parse(schema).schemas?.find((item) => item.tables.length > 0) : undefined
     database.table = first ? { schema: first.name, name: first.tables[0].name } : null
+  }
+  // Permintaan terbuka sisa run yang terganggu akan menahan database dan menggagalkan seluruh run berikutnya
+  if (withJobs) {
+    for (const database of databases) {
+      const result = drainOpenRequests({ client, config, metrics, sleep, now: Date.now, random: Math.random }, { editor, leaders, database, stage: () => 'setup' })
+      if (result.error) fail(result.error)
+    }
   }
   return { runId: Date.now().toString(36), sessions: saved, databases: databases.map((database) => ({ id: database.id, name: database.name, table: database.table })) }
 }

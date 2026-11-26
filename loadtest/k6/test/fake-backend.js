@@ -90,6 +90,21 @@ export function createBackend(options = {}) {
     if (path === '/databases') return respond(200, { items: databases, page: 1, limit: 200, has_next: false })
     let match = /^\/databases\/([^/]+)\/schema$/.exec(path)
     if (match) return respond(200, { schemas: [{ name: 'public', tables: [{ name: 'orders', kind: 'table' }] }] })
+    // Status permintaan yang sudah berjalan mengikuti hasil job-nya seperti pada server sungguhan
+    const statusOf = (request) => {
+      if (request.status !== 'queued') return request
+      const job = state.jobs.find((candidate) => candidate.change_request_id === request.id)
+      return { ...request, status: job && ['succeeded', 'failed'].includes(jobView(job).status) ? 'succeeded' : 'queued' }
+    }
+    match = /^\/databases\/([^/]+)\/change-requests$/.exec(path)
+    if (match && method === 'GET') return respond(200, { items: state.requests.filter((request) => request.database_id === match[1]).map(statusOf), page: 1, limit: 200, has_next: false })
+    match = /^\/databases\/([^/]+)\/change-requests\/([^/]+)$/.exec(path)
+    if (match && method === 'GET') {
+      const request = state.requests.find((candidate) => candidate.id === match[2])
+      return request ? respond(200, statusOf(request)) : failure(404, 'not_found')
+    }
+    match = /^\/databases\/([^/]+)\/migrations$/.exec(path)
+    if (match && method === 'GET') return respond(200, { items: state.migrations.filter((migration) => migration.database_id === match[1]), page: 1, limit: 200, has_next: false })
     match = /^\/databases\/([^/]+)\/(position|executions|migrations|change-requests|jobs|tables\/[^/]+\/[^/]+\/rows)$/.exec(path)
     if (match && method === 'GET') return respond(200, { items: [], page: 1, limit: 50, has_next: false })
     match = /^\/databases\/([^/]+)\/migrations$/.exec(path)

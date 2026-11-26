@@ -162,6 +162,86 @@ Metrik Prometheus, dashboard Grafana, dan Collector dijalankan dengan
 Untuk stress test k6, seed akun dengan password yang sama dengan `K6_PASSWORD` (isi `SEED_SHARED_PASSWORD`),
 lalu jalankan k6 dengan `LEADER_USERS=admin,pengamat` agar kedua leader menyetujui perubahan pada `demo` dan `gudang`.
 
+## Frontend SPA
+
+Seluruh antarmuka, termasuk login dan admin, adalah SPA React 19 + Vite + TypeScript di `web/` yang
+berkomunikasi dengan backend lewat `/api/v1`. Hasil build ditanam ke binary server (`npm run build:embed`),
+sehingga satu proses melayani API dan antarmuka. Server menambahkan nonce acak pada `style-src` halaman utama
+supaya editor SQL (CodeMirror 6, dimuat lazy) bisa memasang gayanya tanpa melonggarkan `script-src`.
+
+Halaman: login, daftar database, schema, tabel dan data, schema diff, migration (editor SQL, mode normal dan batch,
+EXPLAIN), review dan approval, monitor job (polling, progres batch, percobaan, resume dan revert batch),
+riwayat eksekusi (salinan SQL, SQL yang dijalankan per batch, hide rollback, rollback dan forward), serta admin
+(user, group, koneksi, akses). Rujukan kontrak ada di `api/openapi.yaml`, tipenya dibangkitkan dengan `npm run gen:api`.
+
+Perintah dari folder `web/`:
+
+| Perintah | Fungsi |
+| --- | --- |
+| `npm run dev:mock` | Server dev dengan API palsu (MSW); buka `/?as=<username>` untuk melewati login |
+| `npm test` | Unit dan komponen (vitest), berjalan di atas handler mock yang sama |
+| `npm run lint` dan `npx tsc -b` | ESLint dan pemeriksaan tipe |
+| `npx playwright test` | Smoke test browser terhadap `dev:mock` (desktop 1280 px dan mobile 390 px) |
+
+### Pengujian terhadap server sungguhan
+
+Spec `web/e2e/real*.spec.ts` berjalan terhadap server Go dan worker yang asli (PostgreSQL, antrean, worker, CSP). Seed harus
+sudah dijalankan; akun `editor` mengajukan, `admin` dan `pengamat` menjadi leader yang menyetujui.
+
+```sh
+cd web
+E2E_BASE_URL=http://localhost:8080 E2E_ADMIN_PASSWORD=... E2E_VIEWER_PASSWORD=... E2E_EDITOR_PASSWORD=... npx playwright test --project=desktop   # lalu --project=mobile
+```
+
+Setiap peran masuk satu kali (`real-setup.ts`) karena login dibatasi 5 per akun per menit. Cakupannya: alur lengkap buat, ajukan,
+approve oleh semua leader, jalankan, pantau job, riwayat, rollback, dan forward; batch yang berhenti di batch kedua lalu
+dipulihkan dengan revert batch; migration irreversible; satu permintaan terbuka per database; akses lihat saja; serta
+pengukuran scroll horizontal semua halaman pada lebar 360 dan 1440 px dengan data nyata.
+
+### Hasil stress test k6
+
+Skrip `loadtest/k6/stress.js` menjalankan dua skenario sekaligus: pembacaan (schema, posisi, riwayat, daftar, baris tabel) dan alur job
+lengkap (buat, ajukan, disetujui dua leader, dijalankan worker, dipantau sampai status akhir) pada database `demo` dan `gudang`.
+Beban naik 1×, 2×, 4×, 8×, lalu turun ke 1× (sampai 80 VU baca dan 16 VU job, ±8 menit). Keberhasilan job dihitung dari status akhir job,
+bukan dari respons 202. Variabel yang bisa diatur: `PROFILE=smoke`, `SCENARIOS=reads|jobs`, `READ_WORKFLOW=false`,
+`K6_PASSWORD_<USERNAME>`, `SESSIONS_PER_ACCOUNT`, `MULTIPLIERS`, `RAMP_SECONDS`, `HOLD_SECONDS`, `DB_COUNT`, `SAME_DB`.
+
+```sh
+docker run --rm --network <jaringan-compose> -v "$PWD/loadtest/k6:/scripts:ro"   -e BASE_URL=http://server:8080 -e ORIGIN=http://localhost:8080 -e LEADER_USERS=admin,pengamat   -e K6_PASSWORD_EDITOR=... -e K6_PASSWORD_ADMIN=... -e K6_PASSWORD_PENGAMAT=...   grafana/k6 run /scripts/stress.js
+```
+
+Pengukuran dilakukan di satu laptop Windows dengan Docker Desktop (server, worker dengan `WORKER_CONCURRENCY=2`, PostgreSQL, dan k6 semuanya di mesin yang sama),
+sehingga angka mutlaknya hanya berlaku untuk lingkungan itu. Keluaran lengkap dan ringkasan JSON ada di `docs/k6/`.
+
+| Metrik (seluruh run) | Server apa adanya | Dengan perbaikan sesi |
+| --- | --- | --- |
+| Request gagal | 25,3 % | 1,9 % |
+| Job sukses (status akhir) | 39,6 % (40 dari 101) | 93,3 % (97 dari 104) |
+| Throughput | 11,5 request/s | 13,5 request/s |
+| Waktu antre job p50 / p95 | 538 / 1065 ms | 905 / 1677 ms |
+| Durasi job p50 / p95 | 904 / 1157 ms | 1260 / 2072 ms |
+
+Rincian per tahap pada server dengan perbaikan sesi:
+
+| Tahap | Request gagal | Baca p50 | Baca p95 | Throughput | Job selesai | Antre job p95 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1× | 0 % | 378 ms | 662 ms | 2,4/s | 30 | 1173 ms |
+| 2× | 0 % | 1091 ms | 1627 ms | 2,7/s | 20 | 1405 ms |
+| 4× | 0 % | 2586 ms | 3667 ms | 2,8/s | 14 | 1393 ms |
+| 8× | 8,5 % | 5877 ms | 6772 ms | 2,8/s | 7 | 1730 ms |
+| 1× (turun) | 0,7 % | 624 ms | 5328 ms | 2,6/s | 26 | 1723 ms |
+
+Analisis:
+- **Throughput mendatar di ±2,8 request/s** sementara latensi baca naik hampir linear dengan beban, tanda antrean pada satu mesin. Pada 8× server menolak sebagian
+  `GET /databases` dengan 503 (batas waktu) dan kembali sehat saat beban turun. Waktu antre job hampir tidak berubah (1,2–1,7 detik), jadi worker bukan penyempit.
+- **Cacat yang ditemukan oleh stress test ini:** `AuthService.Authenticate` menulis baris sesi dengan compare-and-swap pada *setiap* request dan hanya mencoba 3 kali. Request paralel pada satu
+  sesi saling mengalahkan lalu dibalas 409 (5 request paralel: 2 gagal, 40: 35 gagal; reproduksi dengan `loadtest/k6/diagnostics/session-contention.mjs`). Kolom "Server apa adanya" pada tabel di atas
+  adalah akibatnya. Perbaikan eksperimen (menulis sesi hanya saat rotasi atau `last_seen` lebih tua dari 30 detik) ada di `docs/k6/usulan-perbaikan-sesi.patch` dan menjadikan 40 request paralel
+  semuanya 200. Perbaikan itu belum diterapkan ke kode karena berkas keamanan dimiliki anggota lain.
+- Respons 409 pada `POST .../change-requests` adalah penolakan yang diharapkan (satu permintaan terbuka per database); skrip mengulang pengajuan dan mencatatnya sebagai `submit_conflicts`.
+- Ambang `p(95)<500 ms` untuk pembacaan tidak terpenuhi bahkan pada 1× (662 ms) di mesin ini, sedangkan `http_req_failed<1 %` dan `job_success>95 %` tidak terpenuhi karena sisa kegagalan pada beban 8×.
+- Login dibatasi 5 per akun per menit dan tidak bisa diatur, sehingga k6 memakai kolam sesi kecil per akun (maksimal 5) dan `setup()` menunggu `Retry-After` bila batas itu terpakai.
+
 ## Akun demo (dari `cmd/seed`)
 
 | Username | Password | Peran |
@@ -234,7 +314,7 @@ dan bukti scan ulang dicatat pada [laporan CodeQL](docs/security/codeql.md).
 ## UI Credits
 
 - Tata letak dan gaya: [Bootstrap Simple Admin Template](https://github.com/alexisbriandev/bootstrap-simple-admin-template) (Apache License 2.0).
-- Bootstrap 5.3.3 (MIT), Font Awesome Free 6 solid (CC BY 4.0 / SIL OFL 1.1 / MIT), dan font Lato (SIL OFL 1.1), semuanya diambil dari folder aset template tersebut. Lisensi disertakan di `src/internal/ui/static`.
+- Bootstrap 5.3.3 (MIT), Font Awesome Free 6 solid (CC BY 4.0 / SIL OFL 1.1 / MIT), dan font Lato (SIL OFL 1.1), semuanya diambil dari folder aset template tersebut. Lisensi disertakan di `web/public/licenses` dan ikut tersaji di `/licenses/*.txt`.
 
 ## Struktur
 
@@ -254,6 +334,9 @@ src/
     ├── mysql       # adapter database viewer dan migration target MySQL
     ├── targetdb    # router dan validator berdasarkan DBMS target
     ├── bootstrap   # perakitan semua komponen
-    ├── ui          # handler HTML, template, CSS
+    ├── spa         # menyajikan hasil build SPA yang ditanam ke binary (CSP nonce, fallback rute klien)
     └── web         # router dan middleware fondasi
+
+web/                # frontend SPA (React, Vite, TypeScript)
+loadtest/k6/        # skrip stress test k6 dan tesnya
 ```

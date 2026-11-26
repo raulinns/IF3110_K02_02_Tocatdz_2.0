@@ -6,7 +6,7 @@ import { ids } from '../../mocks/ids.ts'
 import { getState } from '../../mocks/state.ts'
 import { setupMockServer } from '../../mocks/testing.ts'
 import { openAs } from '../../test/app.tsx'
-import { interceptFetch } from '../../test/network.ts'
+import { interceptFetch, rejectRequest } from '../../test/network.ts'
 
 setupMockServer(...handlers)
 
@@ -150,6 +150,16 @@ describe('cabut akses', () => {
     await user.click(within(await rowOf('auditors', 'pelaporan')).getByRole('button', { name: 'Cabut' }))
     await user.click(screen.getByRole('button', { name: 'Batal' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(accessOf(ids.auditors, ids.pelaporan)).toBe('view_only')
+  })
+
+  it('mencabut akses yang masih ditunggu pekerjaan ditolak server dengan penjelasan', async () => {
+    rejectRequest('DELETE', '/admin/grants/', 409, 'conflict')
+    const { user } = openAs('admin', '/admin/grants')
+    await user.click(within(await rowOf('auditors', 'pelaporan')).getByRole('button', { name: 'Cabut' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cabut akses' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Tidak dapat dihapus karena masih ada permintaan, job, atau eksekusi yang belum selesai')
     expect(accessOf(ids.auditors, ids.pelaporan)).toBe('view_only')
   })
 
