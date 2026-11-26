@@ -126,3 +126,22 @@ func (s *M2Store) Checkpoints(ctx context.Context, databaseID, executionID secur
 	}
 	return page, nil
 }
+
+// JobStatusCounts menghitung job per status; status tanpa job tidak ikut dikembalikan.
+func (s *M2Store) JobStatusCounts(ctx context.Context) (map[migration.JobStatus]int64, error) {
+	rows, err := s.pool.Query(ctx, "SELECT status, count(*) FROM jobs GROUP BY status")
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+	counts := map[migration.JobStatus]int64{}
+	for rows.Next() {
+		var status string
+		var count int64
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, mapError(err)
+		}
+		counts[migration.JobStatus(status)] = count
+	}
+	return counts, mapError(rows.Err())
+}

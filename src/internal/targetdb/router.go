@@ -145,3 +145,6 @@ func (r *Router) Close() {
 	r.mysql.Close()
 	r.postgresql.Close()
 }
+
+// PoolStats melaporkan pool target PostgreSQL; target MySQL memakai database/sql dan tidak ikut dihitung.
+func (r *Router) PoolStats() postgres.PoolStats { return r.postgresql.PoolStats() }

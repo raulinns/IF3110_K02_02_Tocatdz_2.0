@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/app"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/bootstrap"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/config"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/logging"
@@ -52,6 +53,7 @@ func run() error {
 		return err
 	}
 	defer runtime.Close()
+	defer app.ServeMetrics(os.Getenv("METRICS_ADDR"), runtime.MetricsHandler(), logger)()
 	logger.Info("starting worker", "event", "worker.start", "worker", options.Owner, "concurrency", options.Concurrency)
 	runtime.Run(ctx)
 	logger.Info("worker stopped gracefully", "event", "worker.stop", "worker", options.Owner)

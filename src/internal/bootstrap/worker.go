@@ -5,12 +5,14 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/config"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
 	mysqltarget "github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/mysql"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/metrics"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/postgres"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/targetdb"
@@ -33,6 +35,7 @@ type WorkerRuntime struct {
 	Worker  *worker.Worker
 	targets *targetdb.Router
 	pool    *pgxpool.Pool
+	metrics *metrics.Registry
 }
 
 func BuildWorker(ctx context.Context, logger *slog.Logger, cfg config.Config, connectionKey security.Secret, opts WorkerOptions) (*WorkerRuntime, error) {
@@ -81,15 +84,26 @@ func (r *WorkerRuntime) build(ctx context.Context, logger *slog.Logger, connecti
 	if err != nil {
 		return err
 	}
-	r.Worker, err = newWorker(store, r.targets, opts.Revalidator, clock, logger, opts.Owner, opts.Concurrency)
+	r.metrics = newMetrics(r.pool, r.targets, store)
+	r.Worker, err = newWorker(store, r.targets, opts.Revalidator, clock, logger, opts.Owner, opts.Concurrency, r.metrics)
 	return err
 }
 
-func newM2Worker(store *postgres.M2Store, targets *targetdb.Router, clock security.Clock, logger *slog.Logger, owner string, concurrency int) (*worker.Worker, error) {
-	return newWorker(store, targets, DefaultRevalidator, clock, logger, owner, concurrency)
+func newMetrics(pool *pgxpool.Pool, targets *targetdb.Router, store *postgres.M2Store) *metrics.Registry {
+	registry := metrics.New()
+	registry.WatchJobs(store)
+	registry.WatchPool("platform", func() postgres.PoolStats { return postgres.PlatformPoolStats(pool) })
+	registry.WatchPool("target", targets.PoolStats)
+	return registry
 }
 
-func newWorker(store *postgres.M2Store, targets *targetdb.Router, factory RevalidatorFactory, clock security.Clock, logger *slog.Logger, owner string, concurrency int) (*worker.Worker, error) {
+func (r *WorkerRuntime) MetricsHandler() http.Handler { return r.metrics.Handler() }
+
+func newM2Worker(store *postgres.M2Store, targets *targetdb.Router, clock security.Clock, logger *slog.Logger, owner string, concurrency int, registry *metrics.Registry) (*worker.Worker, error) {
+	return newWorker(store, targets, DefaultRevalidator, clock, logger, owner, concurrency, registry)
+}
+
+func newWorker(store *postgres.M2Store, targets *targetdb.Router, factory RevalidatorFactory, clock security.Clock, logger *slog.Logger, owner string, concurrency int, registry *metrics.Registry) (*worker.Worker, error) {
 	if factory == nil {
 		return nil, ErrRevalidatorMissing
 	}
@@ -102,7 +116,7 @@ func newWorker(store *postgres.M2Store, targets *targetdb.Router, factory Revali
 		return nil, err
 	}
 	return worker.New(worker.Config{Store: store, Coordinator: targets, Revalidator: revalidator, Runner: runner,
-		Progress: store, Clock: clock, Logger: logger, Owner: owner, Concurrency: concurrency})
+		Progress: registry.Progress(store), Observer: registry, Clock: clock, Logger: logger, Owner: owner, Concurrency: concurrency})
 }
 
 func (r *WorkerRuntime) Run(ctx context.Context) { r.Worker.Run(ctx) }
