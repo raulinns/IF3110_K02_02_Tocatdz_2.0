@@ -1,0 +1,14 @@
+name: Tocatdz milestone 2 security analysis
+
+queries:
+  - uses: security-extended
+
+# Source selection for JavaScript/TypeScript. Go coverage is determined by the
+# manual build; these filters do not exclude compiled Go packages.
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/vendor/**"
+  - "**/coverage/**"
+  - "**/playwright-report/**"
+  - "**/test-results/**"

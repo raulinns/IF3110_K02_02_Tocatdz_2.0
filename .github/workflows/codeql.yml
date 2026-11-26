@@ -1,0 +1,135 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Monday 02:23 UTC (09:23 WIB), including dependency/query-pack updates.
+    - cron: "23 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: manual
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Go from the application module
+        if: matrix.language == 'go'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      # Major tags follow CodeQL's recommended advanced-setup update policy.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Build all Go application packages
+        if: matrix.language == 'go'
+        working-directory: src
+        env:
+          GOTOOLCHAIN: local
+          GOFLAGS: -mod=readonly
+        # Rebuild cached packages so compilation remains visible to extraction.
+        # No DB, credentials, server startup or SPA bundle is needed for SAST.
+        run: go build -a -v ./...
+
+      - name: Analyze and upload to code scanning
+        id: analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+          output: codeql-results
+          wait-for-processing: true
+
+      - name: Record run provenance and source inventory
+        if: always()
+        shell: bash
+        env:
+          SCAN_LANGUAGE: ${{ matrix.language }}
+          SCAN_BUILD_MODE: ${{ matrix.build-mode }}
+          ANALYSIS_OUTCOME: ${{ steps.analyze.outcome }}
+        run: |
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          folder = Path("codeql-evidence")
+          folder.mkdir(exist_ok=True)
+          language = os.environ["SCAN_LANGUAGE"]
+          extensions = {".go"} if language == "go" else {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".html", ".htm"}
+          excluded = {"node_modules", "dist", "vendor", "coverage", "playwright-report", "test-results"}
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          files = sorted(name for name in tracked if name and Path(name).suffix in extensions and not (set(Path(name).parts) & excluded))
+          (folder / "source-inventory.txt").write_text("\n".join(files) + "\n", encoding="utf-8")
+          run_id = os.environ["GITHUB_RUN_ID"]
+          server = os.environ["GITHUB_SERVER_URL"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          metadata = {
+              "recorded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "repository": repo,
+              "sha": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "event": os.environ["GITHUB_EVENT_NAME"],
+              "run_id": run_id,
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "run_url": f"{server}/{repo}/actions/runs/{run_id}",
+              "language": language,
+              "build_mode": os.environ["SCAN_BUILD_MODE"],
+              "query_suite": "security-extended",
+              "analysis_step_outcome": os.environ["ANALYSIS_OUTCOME"],
+              "candidate_source_files": len(files),
+              "inventory_note": "Tracked source candidates, not the number of files successfully extracted by CodeQL. Check CodeQL diagnostics and tool status for extraction coverage.",
+              "sarif_files": sorted(str(p) for p in Path("codeql-results").glob("*.sarif")),
+          }
+          (folder / "run.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"### CodeQL: {language}\n\nAnalysis step: **{metadata['analysis_step_outcome']}**. Query suite: `security-extended`.\n\n")
+              summary.write(f"Candidate source files: {len(files)} (inventory, not extraction coverage).\n\n")
+              summary.write("Review code scanning alerts and the SARIF artifact; workflow success does not imply zero findings.\n")
+          PY
+
+      - name: Preserve SARIF and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-${{ matrix.language }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            codeql-results/
+            codeql-evidence/
+          if-no-files-found: error
+          retention-days: 30
