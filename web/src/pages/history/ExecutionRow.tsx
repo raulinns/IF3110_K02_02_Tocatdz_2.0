@@ -8,6 +8,7 @@ import { SqlField } from '../../components/ui/SqlField.tsx'
 import { formatDateTime } from '../../lib/format.ts'
 import { changeKindLabel } from '../../lib/labels.ts'
 import { jobPath, requestPath } from '../../lib/paths.ts'
+import { ExecutedStatements } from './ExecutedStatements.tsx'
 
 interface ExecutionRowProps {
   db: string
@@ -54,6 +55,7 @@ function Detail({ db, execution }: { db: string; execution: Schemas['ExecutionSu
         )}
       </dl>
       <SqlField label={`Salinan SQL ${detail.direction}`} value={detail.sql_snapshot} readOnly rows={5} className="mb-0" hint="SQL persis seperti yang disetujui dan dijalankan, dan tidak bisa diubah." />
+      <ExecutedStatements db={db} executionId={execution.id} />
     </>
   )
 }

@@ -70,6 +70,17 @@ export const executionsQuery = (db: string, page: number, hideRollback: boolean)
 export const executionQuery = (db: string, id: string) =>
   queryOptions({ queryKey: [...base(db), 'executions', 'detail', id], queryFn: ({ signal }) => api.get<Schemas['Execution']>(path`/databases/${db}/executions/${id}`, { signal }), staleTime: Infinity })
 
+// Statement yang dijalankan dimuat per halaman karena satu eksekusi batch bisa memuat ratusan batch
+export const statementsPageSize = 25
+
+export const statementsQuery = (db: string, id: string, page: number) =>
+  queryOptions({
+    queryKey: [...base(db), 'executions', 'statements', id, page],
+    queryFn: ({ signal }) => api.get<Page<Schemas['ExecutedStatement']>>(path`/databases/${db}/executions/${id}/statements`, { query: { page, limit: statementsPageSize }, signal }),
+    placeholderData: keepPreviousData,
+    staleTime: Infinity,
+  })
+
 export const decide = (db: string, id: string, input: Schemas['ApprovalInput']) => api.post<Schemas['ChangeRequest']>(path`/databases/${db}/change-requests/${id}/approvals`, input)
 
 export const executeRequest = (db: string, id: string, revision: number) => api.post<Schemas['JobAccepted']>(path`/databases/${db}/change-requests/${id}/execute`, { revision })
