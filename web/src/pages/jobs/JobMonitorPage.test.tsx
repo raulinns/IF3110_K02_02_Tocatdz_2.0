@@ -130,8 +130,10 @@ describe('monitor job', () => {
     const dialog = screen.getByRole('dialog', { name: 'Resume job' })
     expect(dialog).toHaveTextContent('Lanjutkan batch yang tersisa')
     await user.click(within(dialog).getByRole('button', { name: 'Resume' }))
-    expect(await screen.findByText('Menunggu review')).toBeInTheDocument()
-    expect(await screen.findByText('Permintaan pemulihan dibuat dan menunggu approval.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('Menunggu review')).toBeInTheDocument()
+      expect(screen.getByText('Permintaan pemulihan dibuat dan menunggu approval.')).toBeInTheDocument()
+    })
     const created = getState().changeRequests.find((request) => request.source_job_id === job.id)
     expect(created).toMatchObject({ kind: 'resume', status: 'pending_review', migration_id: migration.id })
   })
@@ -145,7 +147,7 @@ describe('monitor job', () => {
     const dialog = screen.getByRole('dialog', { name: 'Revert batch' })
     expect(dialog).toHaveTextContent('Batalkan batch yang sudah di-commit dengan SQL down')
     await user.click(within(dialog).getByRole('button', { name: 'Revert batch' }))
-    await screen.findByText('Menunggu review')
+    await waitFor(() => expect(screen.getByText('Menunggu review')).toBeInTheDocument())
     expect(getState().changeRequests.find((request) => request.source_job_id === job.id)?.kind).toBe('revert_batches')
   })
 
