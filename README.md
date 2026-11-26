@@ -214,6 +214,14 @@ variabel pada `.env.example`. Kontrak field, hasil pengujian, cara merekam ulang
 bukti, dan gate integrasi collector tersedia di
 [dokumentasi logging/tracing](docs/observability/log-trace-examples.md).
 
+## Security: CodeQL
+
+Workflow CodeQL menganalisis Go dan JavaScript/TypeScript memakai query suite
+`security-extended` pada PR/push ke `main`, jadwal mingguan, dan trigger manual.
+Hasil dikirim ke GitHub Code scanning serta disimpan sebagai artifact SARIF dan
+metadata per run. Status scan, cakupan, register triase, referensi commit perbaikan,
+dan bukti scan ulang dicatat pada [laporan CodeQL](docs/security/codeql.md).
+
 ## UI Credits
 
 - Tata letak dan gaya: [Bootstrap Simple Admin Template](https://github.com/alexisbriandev/bootstrap-simple-admin-template) (Apache License 2.0).
