@@ -2,5 +2,6 @@ node_modules
 dist
 *.tsbuildinfo
 e2e/.artifacts
+e2e/.auth
 e2e/.report
 test-results

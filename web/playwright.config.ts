@@ -7,12 +7,12 @@ const realUrl = process.env.E2E_BASE_URL
 // Smoke test berjalan terhadap dev:mock memakai Chrome yang sudah terpasang sehingga browser tidak perlu diunduh
 export default defineConfig({
   testDir: 'e2e',
-  testMatch: realUrl ? '**/real.spec.ts' : '**/*.spec.ts',
-  testIgnore: realUrl ? [] : ['**/real.spec.ts'],
+  testMatch: realUrl ? '**/real*.spec.ts' : '**/*.spec.ts',
+  testIgnore: realUrl ? [] : ['**/real*.spec.ts'],
   outputDir: 'e2e/.artifacts',
   timeout: 120_000,
   expect: { timeout: 20_000 },
-  globalSetup: realUrl ? undefined : './e2e/warmup.ts',
+  globalSetup: realUrl ? './e2e/real-setup.ts' : './e2e/warmup.ts',
   retries: process.env.CI ? 1 : 0,
   workers: realUrl ? 1 : process.env.CI ? 2 : undefined,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'e2e/.report' }]],
