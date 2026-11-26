@@ -15,6 +15,7 @@ const (
 	workflowChanges    = "/databases/{database_id}/change-requests"
 	workflowChange     = workflowChanges + "/{change_request_id}"
 	workflowJob        = "/jobs/{job_id}"
+	workflowExecutions = "/databases/{database_id}/executions"
 )
 
 // WorkflowRoutes registers the draft-to-job API. Append to Config.Routes.
@@ -34,6 +35,12 @@ func WorkflowRoutes(service *migration.WorkflowService) ([]Route, error) {
 		{Method: http.MethodPost, Path: workflowChange + "/approvals", Body: JSONBody, Handle: h.decide},
 		{Method: http.MethodPost, Path: workflowChange + "/execute", Body: JSONBody, Handle: h.enqueue},
 		{Method: http.MethodGet, Path: workflowJob, Handle: h.job},
+		{Method: http.MethodGet, Path: workflowJob + "/attempts", QueryParameters: []string{"page", "limit"}, Handle: h.jobAttempts},
+		{Method: http.MethodGet, Path: "/databases/{database_id}/jobs", QueryParameters: []string{"page", "limit", "status"}, Handle: h.jobs},
+		{Method: http.MethodGet, Path: workflowExecutions, QueryParameters: []string{"page", "limit", "hide_rollback"}, Handle: h.executions},
+		{Method: http.MethodGet, Path: workflowExecutions + "/{execution_id}", Handle: h.execution},
+		{Method: http.MethodGet, Path: workflowExecutions + "/{execution_id}/statements", QueryParameters: []string{"page", "limit"}, Handle: h.statements},
+		{Method: http.MethodGet, Path: "/databases/{database_id}/position", Handle: h.position},
 	}, nil
 }
 
@@ -276,7 +283,7 @@ func workflowAPIError(err error) error {
 	var validation migration.WorkflowValidation
 	if errors.As(err, &validation) {
 		switch validation {
-		case migration.WorkflowPostgreSQLOnly, migration.WorkflowUnsupportedChange, migration.WorkflowMissingLeader, migration.WorkflowNoGroups:
+		case migration.WorkflowPostgreSQLOnly, migration.WorkflowUnsupportedChange, migration.WorkflowMissingLeader, migration.WorkflowNoGroups, migration.WorkflowIrreversible:
 			return &ValidationError{Fields: map[string][]string{"kind": {validation.Error()}}}
 		}
 	}

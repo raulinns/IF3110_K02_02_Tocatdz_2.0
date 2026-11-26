@@ -154,8 +154,16 @@ The module exposes migration drafts, change requests, approval decisions,
 execute and job status. Submission freezes the validated draft and snapshots
 the leader of each granted group in one transaction. Execute persists one
 job per approved request and returns its Location and current status.
-The worker owns target execution. This stage handles ordinary apply.
-Rollback, forward, recovery and execution history follow in the next stage.
+The worker owns target execution. Rollback submits the current reversible
+execution and forward submits the first execution in the redo chain. Both
+use the original snapshot and follow the same approval and queue flow as apply.
+
+History and job reads use the same authorized workflow service. The store
+applies hide_rollback by execution ID before paging. Execution detail exposes
+the committed SQL template for review. The statements endpoint uses the
+store's paginated statement records and redacts literals, comments and parameters.
+Expanded batch statements require the store to expose the target checkpoint
+statements through that same paginated port.
 
 ## Construct and integrate
 

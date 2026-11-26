@@ -17,6 +17,7 @@ type WorkflowRepository interface {
 	ChangeRequestStore
 	JobQueue
 	JobLocator
+	ExecutionStore
 }
 
 type WorkflowEngine interface {
@@ -51,7 +52,8 @@ func (WorkflowValidation) Unwrap() error   { return security.ErrInvalidInput }
 
 const (
 	WorkflowPostgreSQLOnly    WorkflowValidation = "Workflow migration hanya tersedia untuk PostgreSQL."
-	WorkflowUnsupportedChange WorkflowValidation = "Pengajuan ini hanya menerima apply tanpa target rollback atau job pemulihan."
+	WorkflowUnsupportedChange WorkflowValidation = "Jenis perubahan atau referensi target tidak valid untuk operasi ini."
+	WorkflowIrreversible      WorkflowValidation = "Eksekusi ini tidak dapat di-rollback karena tidak memiliki SQL down."
 	WorkflowNoGroups          WorkflowValidation = "Database belum memiliki grup pemberi persetujuan."
 	WorkflowMissingLeader     WorkflowValidation = "Setiap grup dengan akses database harus memiliki leader aktif."
 )
@@ -60,7 +62,7 @@ func workflowError(err error) error {
 	var validation WorkflowValidation
 	if errors.As(err, &validation) {
 		switch validation {
-		case WorkflowPostgreSQLOnly, WorkflowUnsupportedChange, WorkflowNoGroups, WorkflowMissingLeader:
+		case WorkflowPostgreSQLOnly, WorkflowUnsupportedChange, WorkflowNoGroups, WorkflowMissingLeader, WorkflowIrreversible:
 			return validation
 		}
 	}
@@ -102,29 +104,48 @@ func (s *WorkflowService) UpdateDefinition(ctx context.Context, req Request, id 
 }
 
 func (s *WorkflowService) Submit(ctx context.Context, req Request, input SubmitChange) (ChangeRequest, error) {
-	if err := s.writeAccess(ctx, req, security.ActionSubmitMigration); err != nil {
+	action := security.ActionSubmitMigration
+	switch input.Kind {
+	case ChangeRollback:
+		action = security.ActionRollbackMigration
+	case ChangeForward:
+		action = security.ActionForwardMigration
+	}
+	if err := s.writeAccess(ctx, req, action); err != nil {
 		return ChangeRequest{}, err
 	}
 	if !validWorkflowRevision(input.MigrationRevision) || !security.ValidID(input.MigrationID) {
 		return ChangeRequest{}, security.ErrInvalidInput
 	}
-	if input.Kind != ChangeApply || input.TargetExecutionID != "" || input.SourceJobID != "" {
+	if input.SourceJobID != "" {
 		return ChangeRequest{}, WorkflowUnsupportedChange
 	}
-	draft, err := s.deps.Store.FindDefinition(ctx, req.DatabaseID, input.MigrationID)
+	switch input.Kind {
+	case ChangeApply:
+		if input.TargetExecutionID != "" {
+			return ChangeRequest{}, WorkflowUnsupportedChange
+		}
+	case ChangeRollback, ChangeForward:
+		if !security.ValidID(input.TargetExecutionID) {
+			return ChangeRequest{}, WorkflowUnsupportedChange
+		}
+	default:
+		return ChangeRequest{}, WorkflowUnsupportedChange
+	}
+	definition, err := s.deps.Store.FindDefinition(ctx, req.DatabaseID, input.MigrationID)
 	if err != nil {
 		return ChangeRequest{}, safeError(err)
 	}
-	if draft.ID != input.MigrationID || draft.DatabaseID != req.DatabaseID {
+	if definition.ID != input.MigrationID || definition.DatabaseID != req.DatabaseID {
 		return ChangeRequest{}, security.ErrUnavailable
 	}
-	if draft.Revision != input.MigrationRevision || draft.State != DefinitionDraft || draft.FirstExecutionAt != nil {
+	if definition.Revision != input.MigrationRevision || !validSubmissionState(input.Kind, definition) {
 		return ChangeRequest{}, security.ErrConflict
 	}
-	if draft.Checksum != ChecksumDefinition(draft.DefinitionInput) {
+	if definition.Checksum != ChecksumDefinition(definition.DefinitionInput) {
 		return ChangeRequest{}, security.ErrUnavailable
 	}
-	if err := ValidateDefinition(ctx, draft.DefinitionInput); err != nil {
+	if err := ValidateDefinition(ctx, definition.DefinitionInput); err != nil {
 		return ChangeRequest{}, err
 	}
 	id, err := s.newWorkflowID()
@@ -133,7 +154,7 @@ func (s *WorkflowService) Submit(ctx context.Context, req Request, input SubmitC
 	}
 	at := s.workflowTime()
 	change := ChangeRequest{
-		ID: id, DatabaseID: req.DatabaseID, SubmitChange: input, Revision: 1, Checksum: draft.Checksum,
+		ID: id, DatabaseID: req.DatabaseID, SubmitChange: input, Revision: 1, Checksum: definition.Checksum,
 		Status: CRPendingReview, RequestedBy: req.Principal.UserID, CreatedAt: at, UpdatedAt: at,
 	}
 	err = s.deps.Store.WithWorkflow(ctx, req, func(tx WorkflowTx) error {
@@ -144,16 +165,16 @@ func (s *WorkflowService) Submit(ctx context.Context, req Request, input SubmitC
 		if err != nil {
 			return err
 		}
-		if current.State != DefinitionDraft || current.FirstExecutionAt != nil ||
-			current.Revision != draft.Revision || current.Checksum != draft.Checksum {
+		if !validSubmissionState(input.Kind, current) ||
+			current.Revision != definition.Revision || current.Checksum != definition.Checksum {
 			return security.ErrConflict
 		}
 		position, err := tx.Position()
 		if err != nil {
 			return err
 		}
-		if position.BlockedByJobID != "" || len(position.Forward) != 0 {
-			return security.ErrConflict
+		if err := checkSubmissionPosition(tx, position, change, current); err != nil {
+			return err
 		}
 		required, err := tx.RequiredApprovers()
 		if err != nil {
