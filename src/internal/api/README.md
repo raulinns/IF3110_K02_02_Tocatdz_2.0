@@ -135,6 +135,28 @@ change during planning yields 409. Target analysis creates no queue jobs or hist
 entries. Server wiring and validation against stored definitions belong to M2
 store integration by 13524044.
 
+## Draft and approval workflow (DOM-03, API-05)
+
+Build the service with the existing PostgreSQL M2 store and append the routes
+in bootstrap alongside admin, explorer and plan:
+
+~~~go
+service, err := migration.NewWorkflowService(migration.WorkflowConfig{
+    Store: workflow, Authorizer: authorizer, Engines: targetRouter, IDs: tokens, Clock: clock,
+})
+if err != nil { /* fail application startup */ }
+workflowRoutes, err := api.WorkflowRoutes(service)
+if err != nil { /* fail application startup */ }
+routes = append(routes, workflowRoutes...)
+~~~
+
+The module exposes migration drafts, change requests, approval decisions,
+execute and job status. Submission freezes the validated draft and snapshots
+the leader of each granted group in one transaction. Execute persists one
+job per approved request and returns its Location and current status.
+The worker owns target execution. This stage handles ordinary apply.
+Rollback, forward, recovery and execution history follow in the next stage.
+
 ## Construct and integrate
 
 The integrator supplies real M1 security dependencies and a slog logger. Routes
