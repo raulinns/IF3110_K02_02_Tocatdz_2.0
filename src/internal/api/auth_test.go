@@ -97,7 +97,7 @@ func TestAuthConfigurationRequiresExplicitRealDependencies(t *testing.T) {
 	if _, err := New(cfg); !errors.Is(err, security.ErrInvalidInput) {
 		t.Fatal("public HEAD route replaced authenticated /me")
 	}
-	// Config is copied: transport-only callers keep the API-01 behavior.
+	// Config is copied: transport-only callers keep the transport-only behavior.
 	a := buildAPI(t, f)
 	w := dispatch(a, loginRequest())
 	if w.Code != 404 {

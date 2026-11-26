@@ -12,7 +12,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/worker"
 )
 
-// snapshotRevalidator menggantikan Revalidator domain (DOM-05) selama test.
+// snapshotRevalidator menggantikan Revalidator domain selama test.
 type snapshotRevalidator struct {
 	reader migration.RevalidationReader
 	fail   error
