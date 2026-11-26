@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Tocatdz 2.0 Milestone 2 API
   version: 0.2.0-contract.1
-  description: K1 review candidate, not implemented routes. Read api/README.md and docs/contracts/m2.md. API JSON
+  description: K1 review candidate, not implemented routes. API JSON
     uses snake_case, canonical UUIDs, UTC timestamps and explicit nulls. Same-origin cookie auth; no CORS. All protected
     unsafe methods require X-CSRF-Token AND valid Origin/Referer. Login is Origin-protected but token-exempt. Every
     API response is no-store with X-Request-ID. JSON bodies <=2 MiB (login <=16 KiB); SQL <=512 KiB each. Reject
@@ -10,7 +10,7 @@ info:
     operations. API and domain models are mapped explicitly; secrets/session identifiers never appear in JSON. Query
     params in examples must be URL-encoded. See docs for provisional Q&A policies and atomicity requirements.
   contact:
-    name: K02-02 / 13524056 (contract owner)
+    name: K02-02
 servers:
 - url: /api/v1
   description: Same-origin API; Vite proxies /api during development.
@@ -2356,7 +2356,7 @@ paths:
       tags:
       - Operations
       summary: Prometheus metrics (optional bonus)
-      description: Mounted at /metrics outside /api/v1, only on internal network. Bonus owned by 13524044. Bounded
+      description: Mounted at /metrics outside /api/v1, only on internal network. Bounded
         labels; no user/job IDs or SQL.
       x-access: internal
       responses:

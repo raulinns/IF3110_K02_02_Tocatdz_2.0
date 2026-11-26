@@ -7,7 +7,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
-// K2 persistence ports are implemented by 13524044, consumed by 13524056.
+// K2 persistence ports are implemented by the stores and consumed by the domain services.
 // Methods return security's error categories (errors.Is), never driver errors.
 // Every lookup includes DatabaseID. A valid ID from another DB is ErrNotFound.
 // Reads alone DO NOT authorize callers. Application services enforce permissions.
@@ -85,7 +85,7 @@ type WorkflowTx interface {
 	EnqueueApproved(changeRequestID security.ID, expectedRevision uint64, spec JobSpec) (JobView, error)
 }
 
-// Revalidator (13524056) is called by worker (13524044) AFTER the cross-worker
+// Revalidator is called by the worker AFTER the cross-worker
 // target lock is acquired. Job has a live lease, CR is queued; the plan verifies
 // current requester account/grants (NOT a browser session), approver identities,
 // checksums and position. Failure must dispatch ZERO target mutation statements.
@@ -113,7 +113,7 @@ type RevalidationSnapshot struct {
 	TargetExecution  *Execution     // Exact original revision snapshot for rollback/forward.
 }
 
-// Runner is implemented by 13524044. LockedTarget is M1's normal SQL/receipt port.
+// Runner is implemented by the worker. LockedTarget is M1's normal SQL/receipt port.
 // The batch runner owns a narrower extra capability interface for checkpoint/range
 // SQL on that SAME physical locked connection. Missing capability must fail closed.
 // Keep the advisory lock across ALL batch commits; never open an unlocked pool tx.
