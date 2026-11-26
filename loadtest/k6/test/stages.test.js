@@ -71,6 +71,17 @@ describe('ambang batas', () => {
     }
   })
 
+  it('scenario yang tidak dijalankan tidak meninggalkan ambang tanpa sampel yang menggagalkan run', () => {
+    const readsOnly = buildThresholds(loadConfig({ SCENARIOS: 'reads' }), labels)
+    assert.equal('job_success' in readsOnly, false)
+    assert.equal(Object.keys(readsOnly).some((key) => key.startsWith('job_') || key.startsWith('jobs_') || key.startsWith('submit_')), false)
+    assert.deepEqual(readsOnly['http_req_duration{kind:read}'], ['p(95)<500'])
+    const jobsOnly = buildThresholds(loadConfig({ SCENARIOS: 'jobs' }), labels)
+    assert.equal(Object.keys(jobsOnly).some((key) => key.startsWith('http_req_duration')), false)
+    assert.deepEqual(jobsOnly.job_success, ['rate>0.95'])
+    assert.deepEqual(jobsOnly.http_req_failed, ['rate<0.01'])
+  })
+
   it('angka ambang mengikuti konfigurasi', () => {
     const custom = buildThresholds(loadConfig({ READ_P95_MS: '250', MAX_ERROR_RATE: '0.05' }), [])
     assert.deepEqual(custom['http_req_duration{kind:read}'], ['p(95)<250'])

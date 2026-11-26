@@ -153,6 +153,82 @@ describe('salinan SQL', () => {
   })
 })
 
+// Eksekusi batch terbaru dengan banyak batch ditambahkan ke state mock sehingga halaman statement bisa diuji
+function seedBatchExecution(batches: number) {
+  const state = getState()
+  const latest = state.executions.reduce((a, b) => (a.position_version > b.position_version ? a : b))
+  const query = 'UPDATE public.orders SET status = $1 WHERE id IN (SELECT id FROM public.orders WHERE id > $2 AND id <= $3 ORDER BY id LIMIT 500) RETURNING id'
+  state.executions.push({
+    ...latest,
+    id: crypto.randomUUID(),
+    position_version: latest.position_version + 1,
+    committed_at: '2026-11-13T10:00:00Z',
+    statements: Array.from({ length: batches }, (_, index) => ({ query, params: ['[REDACTED]', '[REDACTED]', '[REDACTED]'], batch: index + 1 })),
+  })
+}
+
+describe('SQL yang dijalankan', () => {
+  const open = async (user: ReturnType<typeof openAs>['user'], row: number) => {
+    await user.click(within((await bodyRows())[row]).getByRole('button', { name: 'SQL' }))
+    return screen.findByRole('region', { name: /Detail eksekusi/ })
+  }
+
+  it('eksekusi normal menampilkan statement tanpa nomor batch dan tanpa halaman lain', async () => {
+    const { user } = openAs('reviewer', history)
+    const region = await open(user, 3)
+    const section = await within(region).findByRole('region', { name: 'SQL yang dijalankan' })
+    expect(await within(section).findByText(/ALTER TABLE public\.promo ADD COLUMN diskon/)).toBeInTheDocument()
+    expect(within(section).queryByText(/Batch/)).not.toBeInTheDocument()
+    expect(within(section).queryByRole('navigation', { name: 'Halaman statement' })).not.toBeInTheDocument()
+    expect(within(section).getByText(/disamarkan sebagai \[REDACTED\]/)).toBeInTheDocument()
+  })
+
+  it('eksekusi batch menampilkan nomor batch dan membagi statement per halaman', async () => {
+    seedBatchExecution(60)
+    const { user } = openAs('reviewer', history)
+    const section = await within(await open(user, 0)).findByRole('region', { name: 'SQL yang dijalankan' })
+    expect(await within(section).findByText('Batch 1')).toBeInTheDocument()
+    expect(within(section).getAllByText(/^Batch \d+$/)).toHaveLength(25)
+    expect(within(section).getByText('Halaman 1 · statement 1 sampai 25')).toBeInTheDocument()
+    expect(within(section).getByRole('button', { name: 'Sebelumnya' })).toBeDisabled()
+
+    await user.click(within(section).getByRole('button', { name: 'Berikutnya' }))
+    expect(await within(section).findByText('Batch 26')).toBeInTheDocument()
+    expect(within(section).queryByText('Batch 1')).not.toBeInTheDocument()
+    expect(within(section).getByText('Halaman 2 · statement 26 sampai 50')).toBeInTheDocument()
+
+    await user.click(within(section).getByRole('button', { name: 'Berikutnya' }))
+    expect(await within(section).findByText('Batch 60')).toBeInTheDocument()
+    expect(within(section).getAllByText(/^Batch \d+$/)).toHaveLength(10)
+    expect(within(section).getByRole('button', { name: 'Berikutnya' })).toBeDisabled()
+
+    await user.click(within(section).getByRole('button', { name: 'Sebelumnya' }))
+    expect(await within(section).findByText('Batch 26')).toBeInTheDocument()
+  })
+
+  it('hanya meminta satu halaman statement sekali buka, bukan seluruh batch', async () => {
+    seedBatchExecution(60)
+    const spy = interceptFetch('/statements')
+    const { user } = openAs('reviewer', history)
+    const section = await within(await open(user, 0)).findByRole('region', { name: 'SQL yang dijalankan' })
+    await within(section).findByText('Batch 1')
+    const urls = spy.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('/statements'))
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toMatch(/limit=25/)
+    expect(urls[0]).toMatch(/page=1/)
+  })
+
+  it('kegagalan memuat statement tampil di dalam bagiannya dan bisa dicoba lagi', async () => {
+    interceptFetch('/statements', { failures: 1 })
+    const { user } = openAs('reviewer', history)
+    const region = await open(user, 3)
+    const section = await within(region).findByRole('region', { name: 'SQL yang dijalankan' })
+    expect(await within(section).findByRole('alert')).toHaveTextContent('Tidak dapat terhubung ke server')
+    await user.click(within(section).getByRole('button', { name: 'Coba lagi' }))
+    expect(await within(section).findByText(/ALTER TABLE public\.promo ADD COLUMN diskon/)).toBeInTheDocument()
+  })
+})
+
 describe('posisi dan rollback atau forward', () => {
   it('menampilkan migration aktif dan keterangan rollback serta forward', async () => {
     openAs('reviewer', history)

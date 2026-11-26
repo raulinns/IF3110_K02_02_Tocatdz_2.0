@@ -49,5 +49,16 @@ export function createClient({ http, baseUrl, origin }) {
     return res
   }
 
-  return { newSession, login, request, parse }
+  // Sesi diekspor dari setup() dan dipakai ulang oleh VU supaya login tidak diulang di tiap VU dan tidak menabrak pembatas login per akun
+  const exportSession = (session) => ({ username: session.username, csrf: session.csrf, user: session.user, cookies: session.jar.cookiesForURL(`${api}/`) })
+
+  function adoptSession(saved, password) {
+    const session = newSession(saved.username, password)
+    session.csrf = saved.csrf
+    session.user = saved.user
+    for (const [name, values] of Object.entries(saved.cookies)) session.jar.set(`${api}/`, name, Array.isArray(values) ? values[0] : values, { path: '/' })
+    return session
+  }
+
+  return { newSession, login, request, parse, exportSession, adoptSession }
 }

@@ -61,6 +61,29 @@ describe('klien API', () => {
     assert.equal(backend.state.logins, 2)
   })
 
+  it('sesi hasil login diekspor lalu dipakai ulang tanpa login lagi dan token CSRF ikut terbawa', () => {
+    const { client, backend } = setup()
+    const first = client.newSession('editor', 'pw')
+    client.login(first)
+    const saved = JSON.parse(JSON.stringify(client.exportSession(first)))
+    const adopted = client.adoptSession(saved, 'pw')
+    assert.equal(adopted.csrf, first.csrf)
+    assert.equal(adopted.user.id, 'u-editor')
+    assert.equal(client.request(adopted, 'GET', '/auth/me').json().user.username, 'editor')
+    const created = client.request(adopted, 'POST', '/databases/db-1/migrations', { body: { title: 'x', up_sql: 'a', down_sql: 'b', mode: 'normal', batch: null } })
+    assert.equal(created.status, 201)
+    assert.equal(backend.state.logins, 1)
+  })
+
+  it('sesi yang dipakai ulang tetap diperbaiki dengan login ulang memakai kata sandinya bila berakhir', () => {
+    const { client, backend } = setup({ expireFirstSession: true })
+    const first = client.newSession('editor', 'pw')
+    client.login(first)
+    const adopted = client.adoptSession(client.exportSession(first), 'pw')
+    assert.equal(client.request(adopted, 'GET', '/databases').status, 200)
+    assert.equal(backend.state.logins, 2)
+  })
+
   it('nama permintaan diberikan lewat tag dan tag tambahan ikut terbawa', () => {
     const { client, backend } = setup()
     const session = client.newSession('editor', 'pw')

@@ -8,8 +8,9 @@ register('./stubs/loader.mjs', import.meta.url)
 let counter = 0
 
 // Setiap test memuat stress.js dari awal karena konfigurasi dibaca dari __ENV saat modul dimuat
-async function load(env = {}, backendOptions = {}) {
-  const backend = createBackend(backendOptions)
+// Backend bisa dipakai bersama supaya beberapa VU, yang di k6 adalah instance modul terpisah, berhadapan dengan server yang sama
+async function load(env = {}, backendOptions = {}, shared = undefined) {
+  const backend = shared ?? createBackend(backendOptions)
   globalThis.__ENV = { K6_PASSWORD: 'pw', ...env }
   globalThis.__k6 = { backend, checks: [], metrics: {}, execution: { vu: { idInTest: 1 }, scenario: { startTime: Date.now(), iterationInTest: 0 } } }
   const module = await import(`../stress.js?kasus=${counter++}`)
@@ -126,14 +127,103 @@ describe('stress.js', () => {
     assert.deepEqual(same.backend.state.migrations.map((migration) => migration.database_id), ['db-1'])
   })
 
-  it('setiap VU login sekali per akun dan memakai ulang sesinya antar iterasi', async () => {
-    const { module, backend } = await load({}, { runMs: 1000, queueMs: 200 })
+  it('VU memakai sesi hasil login setup() dan tidak login lagi sehingga pembatas login per akun tidak tersentuh', async () => {
+    const { module, backend, k6 } = await load({}, { runMs: 1000, queueMs: 200 })
     const data = module.setup()
-    const afterSetup = backend.state.logins
+    assert.equal(backend.state.logins, 12)
+    assert.deepEqual(Object.keys(data.sessions).sort(), ['editor', 'observer', 'reviewer'])
+    for (const pool of Object.values(data.sessions)) assert.equal(pool.length, 4)
     module.jobs(data)
-    const afterFirst = backend.state.logins
     module.jobs(data)
-    assert.equal(afterFirst - afterSetup, 3)
-    assert.equal(backend.state.logins, afterFirst)
+    module.reads(data)
+    assert.equal(backend.state.logins, 12)
+    assert.equal(k6.metrics.jobs_completed.values.length, 2)
+  })
+
+  it('sesi di data setup bisa diserialisasi seperti yang dilakukan k6 antara setup dan VU', async () => {
+    const { module, backend } = await load({}, { runMs: 1000, queueMs: 200 })
+    const data = JSON.parse(JSON.stringify(module.setup()))
+    module.jobs(data)
+    assert.equal(backend.state.logins, 12)
+  })
+
+  it('tanpa sesi di data VU tetap bisa masuk sendiri sebagai cadangan', async () => {
+    const { module, backend } = await load()
+    const data = module.setup()
+    const before = backend.state.logins
+    module.reads({ ...data, sessions: {} })
+    assert.equal(backend.state.logins, before + 1)
+  })
+
+  it('SESSIONS_PER_ACCOUNT mengatur jumlah sesi per akun dan dibatasi antara 1 dan 5 sesuai batas login server', async () => {
+    const counts = {}
+    for (const value of ['2', '9', '0', 'banyak', '3.7']) {
+      const { module, backend } = await load({ SESSIONS_PER_ACCOUNT: value })
+      module.setup()
+      counts[value] = backend.state.logins
+    }
+    assert.deepEqual(counts, { 2: 6, 9: 15, 0: 3, banyak: 12, '3.7': 9 })
+  })
+
+  it('VU berbeda memakai sesi berbeda dari kolam dan berputar bila VU lebih banyak daripada sesi', async () => {
+    const first = await load({ SCENARIOS: 'reads', SESSIONS_PER_ACCOUNT: '3' })
+    const data = first.module.setup()
+    const pool = data.sessions.editor.map((saved) => saved.cookies.sid[0])
+    assert.equal(new Set(pool).size, 3)
+    const used = []
+    for (const id of [1, 2, 3, 4, 5, 6, 7]) {
+      const vu = await load({ SCENARIOS: 'reads', SESSIONS_PER_ACCOUNT: '3' }, {}, first.backend)
+      vu.k6.execution.vu.idInTest = id
+      const before = first.backend.state.log.length
+      vu.module.reads(data)
+      used.push(first.backend.state.log.slice(before).find((entry) => entry.tags?.kind === 'read').sid)
+    }
+    assert.deepEqual(used, [pool[0], pool[1], pool[2], pool[0], pool[1], pool[2], pool[0]])
+    assert.equal(first.backend.state.logins, 3)
+  })
+
+  it('SCENARIOS=reads hanya mendaftarkan scenario baca dan setup tidak login sebagai leader', async () => {
+    const { module, backend } = await load({ SCENARIOS: 'reads', LEADER_USERS: 'hantu' })
+    assert.deepEqual(Object.keys(module.options.scenarios), ['reads'])
+    assert.equal('job_success' in module.options.thresholds, false)
+    const data = module.setup()
+    assert.equal(backend.state.logins, 4)
+    assert.deepEqual(Object.keys(data.sessions), ['editor'])
+  })
+
+  it('SCENARIOS=jobs hanya mendaftarkan scenario job', async () => {
+    const { module } = await load({ SCENARIOS: 'jobs' })
+    assert.deepEqual(Object.keys(module.options.scenarios), ['jobs'])
+    assert.deepEqual(module.options.thresholds.job_success, ['rate>0.95'])
+  })
+
+  it('mode baca saja memilih database PostgreSQL yang bisa dilihat dan mode job hanya yang bisa diubah', async () => {
+    const reads = await load({ SCENARIOS: 'reads', DB_COUNT: '5' })
+    assert.deepEqual(reads.module.setup().databases.map((database) => database.name), ['inventaris', 'pelaporan', 'catatan'])
+    const both = await load({ DB_COUNT: '5' })
+    assert.deepEqual(both.module.setup().databases.map((database) => database.name), ['inventaris', 'pelaporan'])
+  })
+
+  it('mode baca saja gagal dengan pesan jelas bila tidak ada database yang cocok', async () => {
+    const { module } = await load({ SCENARIOS: 'reads', DATABASES: 'tidak-ada' })
+    assert.throws(() => module.setup(), /tidak ada database PostgreSQL yang bisa dilihat/)
+  })
+
+  it('kata sandi per akun dipakai bila tiap akun punya kata sandi sendiri', async () => {
+    const passwords = { editor: 'sandi-e', reviewer: 'sandi-r', observer: 'sandi-o' }
+    const separate = await load({ K6_PASSWORD: '', K6_PASSWORD_EDITOR: 'sandi-e', K6_PASSWORD_REVIEWER: 'sandi-r', K6_PASSWORD_OBSERVER: 'sandi-o' }, { passwords })
+    assert.equal(Object.keys(separate.module.setup().sessions).length, 3)
+    const shared = await load({ K6_PASSWORD: 'sandi-e' }, { passwords })
+    assert.throws(() => shared.module.setup(), /login leader reviewer gagal/)
+  })
+
+  it('READ_WORKFLOW=false membuat scenario baca tidak pernah menyentuh endpoint workflow', async () => {
+    const { module, backend } = await load({ SCENARIOS: 'reads', READ_WORKFLOW: 'false' })
+    const data = module.setup()
+    const before = backend.state.log.length
+    for (let index = 0; index < 40; index++) module.reads(data)
+    const paths = backend.state.log.slice(before).filter((entry) => entry.tags?.kind === 'read').map((entry) => entry.path)
+    assert.equal(paths.length, 40)
+    for (const path of paths) assert.doesNotMatch(path, /position|executions|migrations|change-requests|jobs/)
   })
 })
