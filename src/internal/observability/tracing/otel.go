@@ -1,5 +1,3 @@
-//go:build otel
-
 package tracing
 
 import (
@@ -58,12 +56,12 @@ func (p otelProvider) Start(ctx context.Context, parent SpanContext, name string
 	_, span := p.tracer.Start(ctx, name, trace.WithSpanKind(kinds[kind]))
 	current := span.SpanContext()
 	return SpanContext{TraceID: current.TraceID().String(), SpanID: current.SpanID().String(), Flags: current.TraceFlags().String(),
-			State: current.TraceState().String()}, func(failed bool) {
-			if failed {
-				span.SetStatus(codes.Error, "operation failed")
-			}
-			span.End()
+		State: current.TraceState().String()}, func(failed bool) {
+		if failed {
+			span.SetStatus(codes.Error, "operation failed")
 		}
+		span.End()
+	}
 }
 
 type consoleExporter struct {

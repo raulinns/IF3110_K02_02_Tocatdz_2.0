@@ -1,5 +1,3 @@
-//go:build otel
-
 package tracing
 
 import (
