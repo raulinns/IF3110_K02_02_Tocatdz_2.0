@@ -578,8 +578,19 @@ func (s *M2Store) ListExecutedStatements(ctx context.Context, databaseID, execut
 	if !exists {
 		return migration.Page[migration.ExecutedStatement]{}, security.ErrNotFound
 	}
-	rows, err := s.pool.Query(ctx, `SELECT s.value FROM executions e, jsonb_array_elements(e.statements) WITH ORDINALITY AS s(value, n)
-		WHERE e.id = $1 AND e.database_id = $2 ORDER BY s.n LIMIT $3 OFFSET $4`, string(executionID), string(databaseID), page.Limit+1, offset)
+	rows, err := s.pool.Query(ctx, `WITH batch AS (
+		SELECT DISTINCT ON (b.batch_no) b.batch_no, b.statement AS value
+		FROM executions e JOIN jobs j ON j.execution_id = e.id AND j.database_id = e.database_id
+		JOIN batch_statements b ON b.job_id = j.id
+		WHERE e.id = $1 AND e.database_id = $2 ORDER BY b.batch_no, j.queued_at DESC, j.id DESC
+	), records AS (
+		SELECT batch_no AS ordinal, value FROM batch
+		UNION ALL
+		SELECT s.n AS ordinal, s.value FROM executions e,
+			jsonb_array_elements(e.statements) WITH ORDINALITY AS s(value, n)
+		WHERE e.id = $1 AND e.database_id = $2 AND NOT EXISTS (SELECT 1 FROM batch)
+	)
+	SELECT value FROM records ORDER BY ordinal LIMIT $3 OFFSET $4`, string(executionID), string(databaseID), page.Limit+1, offset)
 	items, err := collect(rows, err, func(rows pgx.Rows) (migration.ExecutedStatement, error) {
 		var raw []byte
 		if err := rows.Scan(&raw); err != nil {

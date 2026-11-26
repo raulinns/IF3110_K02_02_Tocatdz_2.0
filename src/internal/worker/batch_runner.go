@@ -197,10 +197,46 @@ func (r *BatchRunner) Run(ctx context.Context, plan migration.ExecutionPlan, tar
 		return *rejected, security.ErrInvalidInput
 	}
 	started := r.clock.Now().UTC()
+	if err := r.repairMirrors(ctx, job, sink); err != nil {
+		return uncertain("cannot reconcile batch statement history"), migration.ErrExecutionUncertain
+	}
 	if job.direction == targetbatch.Up {
 		return r.runUp(ctx, job, sink, started)
 	}
 	return r.runDown(ctx, job, sink, started)
+}
+
+// Replay checkpoint evidence into the platform before dispatch. This repairs
+// crashes between the target commit and its platform mirror without rerunning SQL.
+func (r *BatchRunner) repairMirrors(ctx context.Context, job batchJob, sink migration.ProgressSink) error {
+	if sink == nil {
+		return nil
+	}
+	var after int64
+	for {
+		page, err := job.target.Checkpoints(ctx, job.namespace, job.direction, targetbatch.Query{AfterBatch: after, Limit: checkpointPage})
+		if err != nil {
+			return err
+		}
+		for _, checkpoint := range page {
+			var err error
+			if job.direction == targetbatch.Up {
+				item := mirror(checkpoint, job.upStatement(), []security.Secret{secretInt(checkpoint.From),
+					security.NewSecret(strconv.FormatInt(checkpoint.ScopeMax, 10)), security.NewSecret(strconv.Itoa(job.config.BatchSize))}, r.clock.Now().UTC())
+				err = sink.BatchCommitted(ctx, item)
+			} else {
+				item := mirror(checkpoint, job.downStatement(), []security.Secret{security.NewSecret("checkpoint keys")}, r.clock.Now().UTC())
+				err = sink.BatchReverted(ctx, item)
+			}
+			if err != nil {
+				return err
+			}
+			after = checkpoint.Batch
+		}
+		if len(page) < checkpointPage {
+			return nil
+		}
+	}
 }
 
 func (r *BatchRunner) commitBatch(ctx context.Context, job batchJob, batch int64, statement string, args []any, build func(keys []int64) targetbatch.Checkpoint) (targetbatch.Checkpoint, *migration.RunResult, error) {
@@ -303,8 +339,10 @@ func (r *BatchRunner) runUp(ctx context.Context, job batchJob, sink migration.Pr
 			done.RowsCommitted += checkpoint.Rows
 		}
 		if sink != nil {
-			_ = sink.BatchCommitted(ctx, mirror(checkpoint, statement, []security.Secret{secretInt(from), security.NewSecret(strconv.FormatInt(*scope, 10)),
-				security.NewSecret(strconv.Itoa(job.config.BatchSize))}, r.clock.Now().UTC()))
+			if err := sink.BatchCommitted(ctx, mirror(checkpoint, statement, []security.Secret{secretInt(from), security.NewSecret(strconv.FormatInt(*scope, 10)),
+				security.NewSecret(strconv.Itoa(job.config.BatchSize))}, r.clock.Now().UTC())); err != nil {
+				return uncertain("batch committed but platform mirror unavailable"), migration.ErrExecutionUncertain
+			}
 		}
 		if checkpoint.Final {
 			return r.succeeded(job, statement, started, done), nil
@@ -360,7 +398,9 @@ func (r *BatchRunner) runDown(ctx context.Context, job batchJob, sink migration.
 			done.BatchesReverted++
 			done.RowsReverted += checkpoint.Rows
 			if sink != nil {
-				_ = sink.BatchReverted(ctx, mirror(checkpoint, statement, []security.Secret{security.NewSecret(fmt.Sprint(len(source.Keys)) + " keys")}, r.clock.Now().UTC()))
+				if err := sink.BatchReverted(ctx, mirror(checkpoint, statement, []security.Secret{security.NewSecret(fmt.Sprint(len(source.Keys)) + " keys")}, r.clock.Now().UTC())); err != nil {
+					return uncertain("batch reverted but platform mirror unavailable"), migration.ErrExecutionUncertain
+				}
 			}
 		}
 		if len(page) < checkpointPage {
@@ -424,6 +464,19 @@ func (r *BatchRunner) Reconcile(ctx context.Context, plan migration.ExecutionPla
 type ModeRunner struct {
 	Normal *NormalRunner
 	Batch  *BatchRunner
+}
+
+// Repair mirrors target checkpoint evidence before reconciliation publishes a
+// completed execution. The caller already holds the target database lock.
+func (m ModeRunner) Repair(ctx context.Context, plan migration.ExecutionPlan, target migration.LockedTarget, sink migration.ProgressSink) error {
+	if plan.Definition.Mode != migration.ModeBatch {
+		return nil
+	}
+	job, rejected := m.Batch.prepare(ctx, plan, target)
+	if rejected != nil {
+		return security.ErrConflict
+	}
+	return m.Batch.repairMirrors(ctx, job, sink)
 }
 
 var (

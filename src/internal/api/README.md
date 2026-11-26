@@ -162,8 +162,27 @@ History and job reads use the same authorized workflow service. The store
 applies hide_rollback by execution ID before paging. Execution detail exposes
 the committed SQL template for review. The statements endpoint uses the
 store's paginated statement records and redacts literals, comments and parameters.
-Expanded batch statements require the store to expose the target checkpoint
-statements through that same paginated port.
+Batch statements are persisted with the platform progress mirror and returned
+in ascending batch order. Resumes share the original receipt and history deduplicates
+their statement records by batch before pagination. Existing execution records
+retain their legacy statement projection when per-batch records are absent.
+
+Recovery submit accepts resume and revert_batches with source_job_id. The source
+must be the current blocking partial or partially_reverted batch job. Its immutable
+plan is read under the workflow transaction guard. Approval and enqueue recheck
+the current grants, leaders, revision and recovery lineage. Resume retains the
+source receipt and direction, including partially completed compensation.
+Revert allocates a distinct receipt and follows the original checkpoint scope.
+An uncertain job must first be reconciled by the worker.
+
+An explicitly reviewed repair is a new apply definition with source_job_id pointing
+at the blocking partial lineage. This uses a new receipt and the same approval flow.
+It may clear only that matching barrier when its worker execution fully commits.
+
+Apply database migration 0004_batch_statements.sql through the existing migrator
+before running the updated worker. The runner repairs missing statement/progress
+mirrors from target checkpoint evidence before continuing or final reconciliation.
+Mirror failures retain an uncertain outcome until reconciliation succeeds.
 
 ## Construct and integrate
 

@@ -10,6 +10,21 @@ func validSubmissionState(kind ChangeKind, definition MigrationDefinition) bool 
 }
 
 func checkSubmissionPosition(tx WorkflowTx, position Position, change ChangeRequest, definition MigrationDefinition) error {
+	if change.Kind == ChangeResume || change.Kind == ChangeRevertBatches {
+		return checkRecoverySubmission(tx, position, change, definition)
+	}
+	if change.Kind == ChangeApply && change.SourceJobID != "" {
+		source, _, err := recoverySource(tx, change.SourceJobID)
+		if err != nil {
+			return err
+		}
+		if position.BlockedByJobID != source.ID || source.ID != change.SourceJobID ||
+			source.DatabaseID != change.DatabaseID || source.Mode != ModeBatch || source.MigrationID == definition.ID ||
+			(source.Status != JobPartial && source.Status != JobPartiallyReverted) {
+			return security.ErrConflict
+		}
+		return nil
+	}
 	if position.BlockedByJobID != "" {
 		return security.ErrConflict
 	}

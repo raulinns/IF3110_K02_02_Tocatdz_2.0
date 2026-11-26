@@ -386,6 +386,13 @@ func (w *Worker) recover(parent context.Context, lease migration.JobLease) (reso
 			return false
 		}
 		_ = w.cfg.Coordinator.WithDatabaseLock(ctx, lease.Job.DatabaseID, func(locked context.Context, target migration.LockedTarget) error {
+			if repairer, ok := w.cfg.Runner.(interface {
+				Repair(context.Context, migration.ExecutionPlan, migration.LockedTarget, migration.ProgressSink) error
+			}); ok {
+				if err := repairer.Repair(locked, *plan, target, w.cfg.Progress); err != nil {
+					return err
+				}
+			}
 			result, _ := recoverer.Reconcile(locked, *plan, target)
 			switch result.Status {
 			case migration.JobSucceeded:
