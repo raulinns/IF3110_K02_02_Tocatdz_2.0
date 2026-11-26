@@ -27,6 +27,7 @@ const (
 	origin         = "http://localhost:8080"
 	adminPassword  = "password admin demo panjang"
 	viewerPassword = "password pengamat demo panjang"
+	editorPassword = "password editor demo panjang"
 )
 
 func key(fill byte) security.Secret {
@@ -64,9 +65,11 @@ func newE2E(t *testing.T) *e2e {
 	hasher, _ := NewPasswordHasher()
 	adminHash, _ := hasher.Hash(ctx, security.NewSecret(adminPassword))
 	viewerHash, _ := hasher.Hash(ctx, security.NewSecret(viewerPassword))
+	editorHash, _ := hasher.Hash(ctx, security.NewSecret(editorPassword))
 	box, _ := postgres.NewSecretBox(sec.ConnectionKey)
 	if err := postgres.Seed(ctx, platform.pool, box, security.NewTokenGenerator(), postgres.SeedInput{
 		AdminUsername: "admin", AdminHash: adminHash, ViewerUsername: "pengamat", ViewerHash: viewerHash,
+		EditorUsername: "editor", EditorHash: editorHash,
 		TargetName: "demo", TargetDSN: security.NewSecret(targetURL),
 	}); err != nil {
 		t.Fatal(err)
@@ -322,4 +325,107 @@ func TestAPIMySQLConnectionAndExplorer(t *testing.T) {
 func toJSON(value any) string {
 	raw, _ := json.Marshal(value)
 	return string(raw)
+}
+
+func (e *e2e) leaderGroup(t *testing.T, s *session) string {
+	t.Helper()
+	status, me := e.call(t, s, http.MethodGet, "/api/v1/auth/me", nil)
+	groups, _ := me["leader_of"].([]any)
+	if status != http.StatusOK || len(groups) != 1 {
+		t.Fatalf("leader_of = %v (status %d)", me["leader_of"], status)
+	}
+	return groups[0].(string)
+}
+
+func (e *e2e) tableExists(t *testing.T, name string) bool {
+	t.Helper()
+	var exists bool
+	if err := e.target.QueryRow(context.Background(), "SELECT to_regclass($1) IS NOT NULL", "public."+name).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	return exists
+}
+
+// submit mengajukan perubahan, disetujui kedua leader, lalu dieksekusi worker server; hasilnya job yang sudah selesai.
+func (e *e2e) submitAndRun(t *testing.T, editor, admin, viewer *session, database string, change map[string]any) map[string]any {
+	t.Helper()
+	path := "/api/v1/databases/" + database + "/change-requests"
+	status, request := e.call(t, editor, http.MethodPost, path, change)
+	if status != http.StatusCreated || request["status"] != "pending_review" {
+		t.Fatalf("submit = %d %v", status, request)
+	}
+	for _, leader := range []*session{admin, viewer} {
+		status, request = e.call(t, leader, http.MethodPost, path+"/"+request["id"].(string)+"/approvals", map[string]any{
+			"revision": request["revision"], "group_id": e.leaderGroup(t, leader), "decision": "approve", "note": "ok"})
+		if status != http.StatusOK {
+			t.Fatalf("approval = %d %v", status, request)
+		}
+	}
+	if request["status"] != "approved" {
+		t.Fatalf("status after both approvals = %v", request["status"])
+	}
+	status, accepted := e.call(t, editor, http.MethodPost, path+"/"+request["id"].(string)+"/execute", map[string]any{"revision": request["revision"]})
+	if status != http.StatusAccepted || accepted["job_id"] == nil {
+		t.Fatalf("execute = %d %v", status, accepted)
+	}
+	// Eksekusi tidak terjadi di request HTTP: worker mengambil job dari queue.
+	if _, err := e.platform.m2Worker.ProcessOne(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	status, job := e.call(t, editor, http.MethodGet, "/api/v1/jobs/"+accepted["job_id"].(string), nil)
+	if status != http.StatusOK || job["status"] != "succeeded" {
+		t.Fatalf("job = %d %v", status, job)
+	}
+	return job
+}
+
+func TestAPIWorkflowAppliesRollsBackAndHidesRollback(t *testing.T) {
+	e := newE2E(t)
+	editor, admin, viewer := e.login(t, "editor", editorPassword), e.login(t, "admin", adminPassword), e.login(t, "pengamat", viewerPassword)
+	_, body := e.call(t, editor, http.MethodGet, "/api/v1/databases", nil)
+	database := find(t, items(t, body), "name", "demo")["id"].(string)
+	base := "/api/v1/databases/" + database
+
+	status, migrationBody := e.call(t, editor, http.MethodPost, base+"/migrations", map[string]any{
+		"title": "tabel baru", "up_sql": "CREATE TABLE public.alur_api (id int)", "down_sql": "DROP TABLE public.alur_api",
+		"irreversible": false, "irreversible_reason": "", "mode": "normal", "batch": nil})
+	if status != http.StatusCreated {
+		t.Fatalf("create migration = %d %v", status, migrationBody)
+	}
+	e.submitAndRun(t, editor, admin, viewer, database, map[string]any{
+		"migration_id": migrationBody["id"], "migration_revision": migrationBody["revision"], "kind": "apply"})
+	if !e.tableExists(t, "alur_api") {
+		t.Fatal("apply did not change the target database")
+	}
+
+	status, history := e.call(t, editor, http.MethodGet, base+"/executions", nil)
+	executions := items(t, history)
+	if status != http.StatusOK || len(executions) != 1 {
+		t.Fatalf("history after apply = %d %v", status, history)
+	}
+	status, position := e.call(t, editor, http.MethodGet, base+"/position", nil)
+	if status != http.StatusOK {
+		t.Fatalf("position = %d %v", status, position)
+	}
+
+	e.submitAndRun(t, editor, admin, viewer, database, map[string]any{
+		"migration_id": migrationBody["id"], "migration_revision": migrationBody["revision"], "kind": "rollback",
+		"target_execution_id": executions[0]["id"]})
+	if e.tableExists(t, "alur_api") {
+		t.Fatal("rollback did not undo the change")
+	}
+	_, full := e.call(t, editor, http.MethodGet, base+"/executions", nil)
+	_, hidden := e.call(t, editor, http.MethodGet, base+"/executions?hide_rollback=true", nil)
+	if len(items(t, full)) != 2 || len(items(t, hidden)) != 0 {
+		t.Fatalf("history full=%d hidden=%d, want 2 and 0", len(items(t, full)), len(items(t, hidden)))
+	}
+
+	// Pengguna tanpa hak ubah tidak bisa membuat migration, dan editor tidak punya hak admin.
+	if status, _ := e.call(t, viewer, http.MethodPost, base+"/migrations", map[string]any{
+		"title": "x", "up_sql": "SELECT 1", "down_sql": "SELECT 1", "irreversible": false, "irreversible_reason": "", "mode": "normal", "batch": nil}); status != http.StatusForbidden {
+		t.Fatalf("view-only create migration = %d", status)
+	}
+	if status, _ := e.call(t, editor, http.MethodGet, "/api/v1/admin/users", nil); status != http.StatusForbidden {
+		t.Fatalf("editor reading admin users = %d", status)
+	}
 }
