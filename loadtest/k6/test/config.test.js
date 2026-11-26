@@ -44,6 +44,35 @@ describe('loadConfig', () => {
     assert.equal(config.jobTimeoutSeconds, 5)
   })
 
+  it('semua scenario dijalankan secara bawaan dan SCENARIOS memilih sebagian dengan nama tak dikenal diabaikan', () => {
+    assert.deepEqual(loadConfig({}).scenarios, ['reads', 'jobs'])
+    assert.deepEqual(loadConfig({ SCENARIOS: 'reads' }).scenarios, ['reads'])
+    assert.deepEqual(loadConfig({ SCENARIOS: ' jobs , jobs ' }).scenarios, ['jobs'])
+    assert.deepEqual(loadConfig({ SCENARIOS: 'lainnya' }).scenarios, ['reads', 'jobs'])
+  })
+
+  it('endpoint workflow ikut dibaca kecuali READ_WORKFLOW bernilai false', () => {
+    assert.equal(loadConfig({}).readWorkflow, true)
+    assert.equal(loadConfig({ READ_WORKFLOW: 'false' }).readWorkflow, false)
+    assert.equal(loadConfig({ READ_WORKFLOW: 'true' }).readWorkflow, true)
+  })
+
+  it('kata sandi diambil per akun lebih dulu, lalu satu kata sandi bersama, lalu nilai demo', () => {
+    const config = loadConfig({ K6_PASSWORD: 'bersama', K6_PASSWORD_EDITOR: 'milik-editor', K6_PASSWORD_PENGAMAT_2: 'angka' })
+    assert.equal(config.passwordFor('editor'), 'milik-editor')
+    assert.equal(config.passwordFor('reviewer'), 'bersama')
+    assert.equal(config.passwordFor('pengamat-2'), 'angka')
+    assert.equal(loadConfig({}).passwordFor('editor'), 'tocatdz-demo-2026')
+    assert.equal(loadConfig({ K6_PASSWORD_EDITOR: '' }).passwordFor('editor'), 'tocatdz-demo-2026')
+  })
+
+  it('jumlah sesi per akun bernilai 4 secara bawaan dan dibatasi antara 1 dan 5', () => {
+    assert.equal(loadConfig({}).sessionsPerAccount, 4)
+    assert.equal(loadConfig({ SESSIONS_PER_ACCOUNT: '9' }).sessionsPerAccount, 5)
+    assert.equal(loadConfig({ SESSIONS_PER_ACCOUNT: '0' }).sessionsPerAccount, 1)
+    assert.equal(loadConfig({ SESSIONS_PER_ACCOUNT: '2' }).sessionsPerAccount, 2)
+  })
+
   it('profil selain smoke dianggap stres', () => {
     assert.equal(loadConfig({ PROFILE: 'apa-saja' }).profile, 'stress')
   })

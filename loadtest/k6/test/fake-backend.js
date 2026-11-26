@@ -2,7 +2,7 @@ const epoch = 1_800_000_000_000
 
 // Backend palsu yang meniru kontrak /api/v1 secara sinkron seperti http k6, dengan jam buatan supaya job berjalan menurut waktu tidur skrip
 export function createBackend(options = {}) {
-  const settings = { runMs: 3000, queueMs: 500, failJobs: false, stuckJobs: false, conflicts: 0, loginRateLimits: 0, expireFirstSession: false, ...options }
+  const settings = { runMs: 3000, queueMs: 500, failJobs: false, stuckJobs: false, conflicts: 0, loginRateLimits: 0, expireFirstSession: false, passwords: {}, ...options }
   const clock = { t: 0 }
   const iso = (offset) => new Date(epoch + offset).toISOString()
   const users = {
@@ -14,6 +14,7 @@ export function createBackend(options = {}) {
     { id: 'db-1', name: 'inventaris', engine: 'postgresql', access: 'view_edit', capabilities: { workflow: true } },
     { id: 'db-2', name: 'pelaporan', engine: 'postgresql', access: 'view_edit', capabilities: { workflow: true } },
     { id: 'db-3', name: 'arsip', engine: 'mysql', access: 'view_only', capabilities: { workflow: false } },
+    { id: 'db-4', name: 'catatan', engine: 'postgresql', access: 'view_only', capabilities: { workflow: true } },
   ]
   const state = { sessions: {}, migrations: [], requests: [], jobs: [], log: [], logins: 0, conflictsLeft: settings.conflicts, rateLimitsLeft: settings.loginRateLimits, expired: false, nextId: 1 }
   const id = (prefix) => `${prefix}-${state.nextId++}`
@@ -21,6 +22,15 @@ export function createBackend(options = {}) {
   class CookieJar {
     constructor() {
       this.cookies = {}
+    }
+
+    // Mengikuti bentuk jar k6: cookiesForURL mengembalikan nama dengan daftar nilai, dan set menerima url, nama, nilai, opsi
+    cookiesForURL() {
+      return Object.fromEntries(Object.entries(this.cookies).map(([name, value]) => [name, [value]]))
+    }
+
+    set(url, name, value) {
+      this.cookies[name] = value
     }
   }
 
@@ -47,7 +57,7 @@ export function createBackend(options = {}) {
   function handle(method, rawPath, body, params) {
     const headers = params.headers ?? {}
     const path = rawPath.replace(/^.*\/api\/v1/, '').split('?')[0]
-    const record = { method, path, tags: params.tags, expected: params.responseCallback?.codes, headers }
+    const record = { method, path, tags: params.tags, expected: params.responseCallback?.codes, headers, sid: params.jar?.cookies?.sid }
     state.log.push(record)
     if (headers.Origin !== 'http://localhost:8080') return failure(403, 'forbidden', 'origin')
     if (path === '/auth/login') {
@@ -57,7 +67,7 @@ export function createBackend(options = {}) {
       }
       const input = JSON.parse(body)
       const user = users[input.username]
-      if (!user || input.password !== 'pw') return failure(401, 'unauthenticated')
+      if (!user || input.password !== (settings.passwords[input.username] ?? 'pw')) return failure(401, 'unauthenticated')
       state.logins += 1
       const sid = id('sid')
       state.sessions[sid] = { user, csrf: `csrf-${sid}`, fresh: settings.expireFirstSession && !state.expired }

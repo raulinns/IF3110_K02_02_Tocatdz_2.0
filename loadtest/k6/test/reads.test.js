@@ -27,6 +27,12 @@ describe('endpoint baca', () => {
     assert.match(target.path, /tables\/sch%20ema\/a%2Fb\/rows/)
   })
 
+  it('tanpa workflow hanya endpoint baca dasar yang tersisa dan semuanya bukan endpoint workflow', () => {
+    const names = readTargets(database, { workflow: false }).map((target) => target.name)
+    assert.deepEqual(names, ['GET /databases', 'GET /databases/{id}/schema', 'GET /databases/{id}/tables/{schema}/{table}/rows'])
+    assert.equal(readTargets(database, { workflow: true }).length, readTargets(database).length)
+  })
+
   it('pemilihan acak mencakup seluruh endpoint dan tidak keluar rentang', () => {
     const targets = readTargets(database)
     const picked = new Set()
@@ -38,6 +44,17 @@ describe('endpoint baca', () => {
 })
 
 describe('satu pembacaan', () => {
+  it('tanpa workflow tidak pernah meminta endpoint workflow berapa pun nilai acaknya', () => {
+    const backend = createBackend()
+    const client = createClient({ http: backend.http, baseUrl: 'http://localhost:8080', origin: 'http://localhost:8080' })
+    const session = client.newSession('editor', 'pw')
+    client.login(session)
+    for (let index = 0; index < 50; index++) readOnce({ client, session, database, stage: () => 'tahap1-x1', random: () => index / 50, check: () => undefined, workflow: false })
+    const paths = backend.state.log.filter((entry) => entry.tags?.kind === 'read').map((entry) => entry.path)
+    assert.equal(paths.length, 50)
+    for (const path of paths) assert.doesNotMatch(path, /position|executions|migrations|change-requests|jobs/)
+  })
+
   it('diberi tag jenis baca dan tahap, dan memeriksa status 200', () => {
     const backend = createBackend()
     const client = createClient({ http: backend.http, baseUrl: 'http://localhost:8080', origin: 'http://localhost:8080' })
