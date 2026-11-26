@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { decide } from '../../api/workflow.ts'
-import { isApiError } from '../../api/errors.ts'
+import { isApiError, isStaleConflict } from '../../api/errors.ts'
 import { errorMessage, fieldError } from '../../api/messages.ts'
 import type { Schemas } from '../../api/types.ts'
 import { Field } from '../../components/ui/Field.tsx'
@@ -48,7 +48,7 @@ export function DecideDialog({ db, request, approval, onDecided, onReload, onClo
     }
   }
 
-  const stale = isApiError(failure) && failure.reason !== undefined && staleReasons.has(failure.reason)
+  const stale = isStaleConflict(failure, staleReasons)
   const busy = pending !== null
 
   return (

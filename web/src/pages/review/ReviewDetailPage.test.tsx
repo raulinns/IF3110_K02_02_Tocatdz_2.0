@@ -7,7 +7,7 @@ import { getState } from '../../mocks/state.ts'
 import { setupMockServer } from '../../mocks/testing.ts'
 import { openAs } from '../../test/app.tsx'
 import { sqlOf } from '../../test/editor.ts'
-import { interceptFetch } from '../../test/network.ts'
+import { interceptFetch, realServerErrors } from '../../test/network.ts'
 import { approveAll, seedRequest } from '../../test/workflow.ts'
 
 setupMockServer(...handlers)
@@ -167,6 +167,18 @@ describe('memutuskan', () => {
     await user.click(screen.getByRole('button', { name: 'Muat ulang permintaan' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(await screen.findByText('4', { selector: '.mono' })).toBeInTheDocument()
+  })
+
+  it('konflik dari server sungguhan tanpa reason tetap menawarkan muat ulang permintaan', async () => {
+    const request = seedRequest()
+    realServerErrors()
+    const { user } = openAs('reviewer', detail(request.id))
+    await user.click(within(await rowOf('writers')).getByRole('button', { name: 'Putuskan' }))
+    requestOf(request.id).revision = 4
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Setujui' }))
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Data atau status berubah')
+    await user.click(screen.getByRole('button', { name: 'Muat ulang permintaan' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('leader yang sudah diganti sejak pengajuan tidak bisa memutuskan dengan penjelasan', async () => {

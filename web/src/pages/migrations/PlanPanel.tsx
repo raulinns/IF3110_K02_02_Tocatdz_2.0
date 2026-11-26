@@ -1,13 +1,15 @@
 import { useId, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { explainMigration } from '../../api/migrations.ts'
-import { isApiError } from '../../api/errors.ts'
+import { isStaleConflict } from '../../api/errors.ts'
 import { errorMessage, fieldError } from '../../api/messages.ts'
 import type { Schemas } from '../../api/types.ts'
 import { Field } from '../../components/ui/Field.tsx'
 import { Notice } from '../../components/ui/Notice.tsx'
 import { splitStatements } from '../../lib/sql.ts'
 import { PlanView } from './PlanView.tsx'
+
+const staleReasons = new Set(['revision_mismatch'])
 
 interface PlanPanelProps {
   db: string
@@ -33,7 +35,7 @@ export function PlanPanel({ db, migration, dirty }: PlanPanelProps) {
   const analyzeProblem = fieldError(error, 'analyze')
   const directionProblem = fieldError(error, 'direction')
   const general = error && !statementProblem && !analyzeProblem && !directionProblem ? errorMessage(error) : null
-  const reason = isApiError(error) ? error.reason : undefined
+  const stale = isStaleConflict(error, staleReasons)
 
   function changeDirection(next: Schemas['Direction']) {
     setDirection(next)
@@ -61,7 +63,7 @@ export function PlanPanel({ db, migration, dirty }: PlanPanelProps) {
             {general && (
               <Notice kind="error">
                 {general}
-                {reason === 'revision_mismatch' && ' Muat ulang halaman ini untuk melihat revisi terbaru.'}
+                {stale && ' Muat ulang halaman ini untuk melihat revisi terbaru.'}
               </Notice>
             )}
             <form

@@ -6,6 +6,7 @@ import { ids, workflowIds } from '../../mocks/ids.ts'
 import { getState } from '../../mocks/state.ts'
 import { setupMockServer } from '../../mocks/testing.ts'
 import { openAs } from '../../test/app.tsx'
+import { realServerErrors } from '../../test/network.ts'
 
 setupMockServer(...handlers)
 
@@ -137,6 +138,17 @@ describe('panel EXPLAIN', () => {
     migration.revision = 7
     await run(user)
     expect(await screen.findByRole('alert')).toHaveTextContent('Migration sudah diubah')
+    expect(screen.getByRole('alert')).toHaveTextContent('Muat ulang halaman ini')
+  })
+
+  it('konflik dari server sungguhan tanpa reason tetap memberi petunjuk memuat ulang', async () => {
+    const migration = seedMigration()
+    realServerErrors()
+    const { user } = open(migration.id)
+    await panel()
+    migration.revision = 7
+    await run(user)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Data atau status berubah')
     expect(screen.getByRole('alert')).toHaveTextContent('Muat ulang halaman ini')
   })
 

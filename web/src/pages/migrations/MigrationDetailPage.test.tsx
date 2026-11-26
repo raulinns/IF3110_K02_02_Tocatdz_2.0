@@ -7,7 +7,7 @@ import { getState } from '../../mocks/state.ts'
 import { setupMockServer } from '../../mocks/testing.ts'
 import { openAs } from '../../test/app.tsx'
 import { setSql, sqlOf } from '../../test/editor.ts'
-import { interceptFetch } from '../../test/network.ts'
+import { interceptFetch, realServerErrors } from '../../test/network.ts'
 
 setupMockServer(...handlers)
 
@@ -170,6 +170,30 @@ describe('konflik dengan server', () => {
     await user.click(screen.getByRole('button', { name: 'Muat ulang dari server' }))
     expect(await screen.findByText(/Definisi dibekukan karena sudah diajukan/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Simpan draft' })).not.toBeInTheDocument()
+  })
+
+  it('konflik revision dari server sungguhan tanpa reason tetap menawarkan muat ulang', async () => {
+    realServerErrors()
+    const { user } = openAs('reviewer', detail(draft))
+    await ready()
+    await retitle(user, 'Perubahan saya')
+    migrationOf(draft).revision = 5
+    migrationOf(draft).title = 'Perubahan orang lain'
+    await save(user)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Data atau status berubah')
+    await user.click(screen.getByRole('button', { name: 'Muat ulang dari server' }))
+    expect(await screen.findByRole('heading', { name: 'Perubahan orang lain' })).toBeInTheDocument()
+  })
+
+  it('draft yang dibekukan server sungguhan tanpa reason menjadi baca saja setelah dimuat ulang', async () => {
+    realServerErrors()
+    const { user } = openAs('reviewer', detail(draft))
+    await ready()
+    await retitle(user, 'Terlambat')
+    migrationOf(draft).state = 'frozen'
+    await save(user)
+    await user.click(await screen.findByRole('button', { name: 'Muat ulang dari server' }))
+    expect(await screen.findByText(/Definisi dibekukan karena sudah diajukan/)).toBeInTheDocument()
   })
 
   it('kegagalan jaringan ditampilkan dan isian pengguna tidak hilang', async () => {
@@ -354,5 +378,29 @@ describe('mengajukan untuk review', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Ajukan' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('belum memiliki leader')
     expect(migrationOf(draft).state).toBe('draft')
+  })
+
+  it('penolakan 422 dari server sungguhan tanpa field dijelaskan penyebab yang paling mungkin', async () => {
+    getState().groups.find((group) => group.id === ids.writers)!.leader_user_id = null
+    realServerErrors()
+    const { user } = openAs('reviewer', detail(draft))
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'Ajukan untuk review' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Ajukan' }))
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert).toHaveTextContent('setiap group sudah memiliki leader')
+    expect(alert).not.toHaveTextContent('Input tidak valid')
+  })
+
+  it('konflik 409 dari server sungguhan dijelaskan dan menyarankan memuat ulang', async () => {
+    realServerErrors()
+    const { user } = openAs('reviewer', detail(draft))
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'Ajukan untuk review' }))
+    migrationOf(draft).state = 'frozen'
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Ajukan' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Muat ulang lalu coba lagi')
   })
 })

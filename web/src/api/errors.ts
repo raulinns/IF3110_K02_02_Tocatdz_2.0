@@ -55,6 +55,12 @@ export function isApiError(err: unknown): err is ApiError {
   return err instanceof ApiError
 }
 
+// Server nyata membalas konflik hanya dengan kode umum tanpa reason, sehingga konflik tanpa reason dianggap data yang sudah basi
+export function isStaleConflict(err: unknown, staleReasons: ReadonlySet<string>): boolean {
+  if (!isApiError(err)) return false
+  return err.reason === undefined ? err.code === 'conflict' : staleReasons.has(err.reason)
+}
+
 export function codeForStatus(status: number): ApiErrorCode {
   switch (status) {
     case 400:

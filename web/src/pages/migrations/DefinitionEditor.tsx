@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Definition } from '../../api/migrations.ts'
-import { isApiError } from '../../api/errors.ts'
+import { isApiError, isStaleConflict } from '../../api/errors.ts'
 import { errorMessage } from '../../api/messages.ts'
 import { Notice } from '../../components/ui/Notice.tsx'
 import { definitionProblems, fieldOrder, firstProblem, sameForm, toDefinition, type DefinitionForm, type Problems } from '../../lib/definition.ts'
@@ -86,7 +86,7 @@ export function DefinitionEditor({ initial, readOnly, submitLabel, onSave, onRel
   }
 
   const visible = Object.keys(problems).some((field) => fieldOrder.includes(field))
-  const stale = isApiError(failure) && failure.reason !== undefined && staleReasons.has(failure.reason)
+  const stale = isStaleConflict(failure, staleReasons)
 
   return (
     <form ref={form} onSubmit={(event) => void submit(event)} noValidate aria-busy={saving}>
