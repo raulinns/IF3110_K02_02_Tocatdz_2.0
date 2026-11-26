@@ -880,6 +880,11 @@ a {
 	word-break: break-word;
 }
 
+/* Teks tersembunyi di dalam tabel bersifat absolute sehingga wadah gulir harus menjadi acuannya agar tidak melebarkan halaman */
+.table-responsive {
+	position: relative;
+}
+
 .table-plan td {
 	white-space: nowrap;
 }
