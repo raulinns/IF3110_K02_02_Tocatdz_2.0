@@ -21,6 +21,7 @@ export function Topbar({ username, admin, menuOpen, onToggleMenu, onLogout }: To
     }
   }
 
+  // Teks tombol keluar disembunyikan di layar kecil sehingga nama aksesibelnya diberikan lewat aria-label
   return (
     <header className="topbar">
       <button
@@ -39,7 +40,7 @@ export function Topbar({ username, admin, menuOpen, onToggleMenu, onLogout }: To
           <i className="fas fa-circle-user" aria-hidden="true" /> <span className="name mono">{username}</span>
           {admin && <span className="badge access-view_edit ms-1">Admin</span>}
         </span>
-        <button type="button" className="btn btn-sm btn-outline-secondary" disabled={leaving} onClick={logout}>
+        <button type="button" className="btn btn-sm btn-outline-secondary" aria-label="Keluar" disabled={leaving} onClick={logout}>
           <i className="fas fa-right-from-bracket" aria-hidden="true" />
           <span className="btn-label">Keluar</span>
         </button>
