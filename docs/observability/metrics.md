@@ -76,13 +76,42 @@ Seluruh 21 kueri panel dijalankan terhadap Prometheus dan semuanya berhasil sert
 
 ## Korelasi log, trace, dan metrik
 
-Infrastrukturnya sudah siap: Collector menerima OTLP dan meneruskannya, sumber data Loki memiliki
-*derived field* `trace_id` yang membuka Tempo, dan Tempo dapat membuka log terkait.
+Server dan worker memasang logger JSON dan tracing OpenTelemetry saat start (`app.SetupObservability`). Span
+selalu dicetak ke stdout; bila `OTEL_EXPORTER_OTLP_ENDPOINT` diisi, span juga dikirim lewat OTLP/HTTP ke Collector.
+Log aplikasi dibaca Collector dari log Docker container ber-tag `tocatdz-*` (receiver `filelog`; container lain
+di mesin yang sama diabaikan), lalu dikirim ke Loki. Jalankan seluruhnya dengan:
 
-Contoh korelasi `trace_id` dari Tempo ke log di Loki lalu ke lonjakan metrik **belum dapat ditampilkan**.
-Paket `observability/logging` dan `observability/tracing` (lane 13524056) sudah memuat instrumentasinya,
-tetapi `cmd/server` dan `cmd/worker` belum memasangnya: keduanya masih memakai logger lama dan belum memanggil
-`tracing.NewOpenTelemetry` dan `tracing.Install`, sehingga span belum dihasilkan. Pemasangan itu adalah tugas
-integrator. Setelah terpasang, jalankan dengan `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318`
-(OTLP/HTTP), lalu lengkapi bagian ini dengan tangkapan layar korelasinya. Log aplikasi ke Loki juga perlu jalur
-pengumpulan dari stdout, karena paket tracing hanya mengekspor trace lewat OTLP.
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 docker compose --profile observability up -d --build
+```
+
+### Contoh: satu eksekusi dari API sampai query
+
+Alur lengkap dijalankan lewat API (editor membuat migration dan mengajukannya, leader `admin` dan `pengamat`
+menyetujui, editor memanggil `execute`, worker menjalankannya) pada database `demo`. Respons `execute` bernilai
+`202` dengan header `X-Request-Id: bb53a356adbe1572c5789528d8740da4`. Seluruh jejaknya memakai satu `trace_id`,
+`67dca5929411dced7d85f03b74acc820`.
+
+**Trace di Tempo** (114 span, dua layanan):
+
+| Layanan | Span |
+|---|---|
+| `tocatdz-server` | `HTTP POST /api/v1/databases/{database_id}/change-requests/{change_request_id}/execute`, `job.enqueue`, 47 `db.query` |
+| `tocatdz-worker` | `job.process`, `lock.acquire`, `revalidate`, `sql.exec`, `history.append`, 60 `db.query` |
+
+Trace context dititipkan di `jobs.trace_context` saat enqueue dan dipulihkan worker, sehingga span worker
+tersambung ke request API yang sama.
+
+**Log di Loki** dengan `trace_id` yang sama. Kueri `{service_name="tocatdz-worker"} | json | job_id="<id>"`
+mengembalikan urutan event berikut, semuanya berbagi satu `trace_id`:
+`job.claimed`, `lock.acquire.start`, `lock.acquired`, `job.revalidated`, `sql.exec.start`, `sql.exec.done`,
+`tx.commit`, `history.appended`, `lock.released`, `job.succeeded`. Di sisi server, `{service_name="tocatdz-server"}
+| json | trace_id="<id>"` menampilkan `job.enqueued` dan `http.request` dengan `request_id` yang sama dengan header
+respons. Sumber data Loki di Grafana dikonfigurasi agar `trace_id` pada log menjadi tautan ke trace di Tempo (belum diuji lewat antarmuka).
+
+**Metrik** pada saat yang sama: `tocatdz_jobs{status="succeeded"}` bernilai 2,
+`tocatdz_jobs_finished_total{kind="apply",mode="normal",status="succeeded"}` bernilai 2, dan rata-rata
+`tocatdz_queue_wait_seconds` sekitar 0,46 detik (dua job pada dua database).
+
+Hasil ini diperoleh dari menjalankan stack nyata; untuk mengulanginya, gunakan perintah di atas, jalankan
+`go run ./cmd/seed`, lalu lakukan alur di atas lewat SPA atau API.

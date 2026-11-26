@@ -13,8 +13,6 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/app"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/bootstrap"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/config"
-	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/logging"
-	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/tracing"
 )
 
 const defaultConcurrency = 2
@@ -44,20 +42,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	logger := logging.New(cfg.AppEnv, os.Stdout)
-	slog.SetDefault(logger)
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	shutdown, err := tracing.StartProcess(ctx, "tocatdz-worker", os.Stdout)
+
+	logger, flushTraces, err := app.SetupObservability(ctx, "tocatdz-worker")
 	if err != nil {
-		return fmt.Errorf("initialize tracing: %w", err)
+		return err
 	}
-	defer func() {
-		if err := shutdown(); err != nil {
-			logger.Error("trace shutdown failed", "event", "tracing.shutdown", "status", "failed")
-		}
-	}()
+	defer flushTraces()
 	runtime, err := bootstrap.BuildWorker(ctx, logger, cfg, sec.ConnectionKey, options)
 	if err != nil {
 		return err

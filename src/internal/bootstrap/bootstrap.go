@@ -160,7 +160,13 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 	if err != nil {
 		return err
 	}
-	routes, err := apiRoutes(logger, adminService, adminM2, viewer, diff, p.targets, planner)
+	workflowService, err := migration.NewWorkflowService(migration.WorkflowConfig{
+		Store: workflow, Authorizer: authorizer, Engines: p.targets, IDs: tokens, Clock: clock,
+	})
+	if err != nil {
+		return err
+	}
+	routes, err := apiRoutes(logger, adminService, adminM2, viewer, diff, p.targets, planner, workflowService)
 	if err != nil {
 		return err
 	}
@@ -184,7 +190,7 @@ func (p *Platform) build(ctx context.Context, logger *slog.Logger, sec config.Se
 }
 
 func apiRoutes(logger *slog.Logger, adminService *admin.Service, adminM2 *admin.M2Service, viewer explorer.Viewer,
-	diff schemadiff.Application, engines api.EngineResolver, planner api.DefinitionPlanner) ([]api.Route, error) {
+	diff schemadiff.Application, engines api.EngineResolver, planner api.DefinitionPlanner, workflowService *migration.WorkflowService) ([]api.Route, error) {
 	adminRoutes, err := api.AdminRoutes(api.AdminConfig{Service: adminService, M2: adminM2, Logger: logger})
 	if err != nil {
 		return nil, err
@@ -197,7 +203,13 @@ func apiRoutes(logger *slog.Logger, adminService *admin.Service, adminM2 *admin.
 	if err != nil {
 		return nil, err
 	}
-	return append(append(adminRoutes, explorerRoutes...), planRoutes...), nil
+	workflowRoutes, err := api.WorkflowRoutes(workflowService)
+	if err != nil {
+		return nil, err
+	}
+	routes := append(adminRoutes, explorerRoutes...)
+	routes = append(routes, planRoutes...)
+	return append(routes, workflowRoutes...), nil
 }
 
 // RunWorker menjalankan rekonsiliasi migration pending sampai ctx dibatalkan.
