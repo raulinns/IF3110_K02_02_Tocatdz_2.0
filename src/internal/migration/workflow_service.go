@@ -121,6 +121,10 @@ func (s *WorkflowService) Submit(ctx context.Context, req Request, input SubmitC
 		action = security.ActionRollbackMigration
 	case ChangeForward:
 		action = security.ActionForwardMigration
+	case ChangeResume:
+		action = security.ActionResumeMigration
+	case ChangeRevertBatches:
+		action = security.ActionRevertBatches
 	}
 	if err := s.writeAccess(ctx, req, action); err != nil {
 		return ChangeRequest{}, err
@@ -128,16 +132,20 @@ func (s *WorkflowService) Submit(ctx context.Context, req Request, input SubmitC
 	if !validWorkflowRevision(input.MigrationRevision) || !security.ValidID(input.MigrationID) {
 		return ChangeRequest{}, security.ErrInvalidInput
 	}
-	if input.SourceJobID != "" {
+	if input.SourceJobID != "" && input.Kind != ChangeApply && input.Kind != ChangeResume && input.Kind != ChangeRevertBatches {
 		return ChangeRequest{}, WorkflowUnsupportedChange
 	}
 	switch input.Kind {
 	case ChangeApply:
-		if input.TargetExecutionID != "" {
+		if input.TargetExecutionID != "" || (input.SourceJobID != "" && !security.ValidID(input.SourceJobID)) {
 			return ChangeRequest{}, WorkflowUnsupportedChange
 		}
 	case ChangeRollback, ChangeForward:
 		if !security.ValidID(input.TargetExecutionID) {
+			return ChangeRequest{}, WorkflowUnsupportedChange
+		}
+	case ChangeResume, ChangeRevertBatches:
+		if !security.ValidID(input.SourceJobID) || input.TargetExecutionID != "" {
 			return ChangeRequest{}, WorkflowUnsupportedChange
 		}
 	default:
@@ -305,6 +313,27 @@ func (s *WorkflowService) Enqueue(ctx context.Context, req Request, id security.
 			}
 			if !approvalsStillValid(change, required) {
 				return security.ErrConflict
+			}
+			definition, err := tx.Definition(change.MigrationID)
+			if err != nil {
+				return err
+			}
+			position, err := tx.Position()
+			if err != nil {
+				return err
+			}
+			if position.Version != change.ExpectedPosition {
+				return security.ErrConflict
+			}
+			if err := checkSubmissionPosition(tx, position, change, definition); err != nil {
+				return err
+			}
+			if change.Kind == ChangeResume {
+				source, _, err := recoverySource(tx, change.SourceJobID)
+				if err != nil {
+					return err
+				}
+				spec.ExecutionID = source.ExecutionID
 			}
 		case CRQueued, CRRunning, CRSucceeded, CRFailed, CRPartial, CRUncertain, CRPartiallyReverted:
 			// A CR starts at revision one and advances once per persisted vote
