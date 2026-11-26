@@ -154,6 +154,29 @@ func (f *workflowFixture) FindJob(_ context.Context, _, _ security.ID) (migratio
 	return f.job, nil
 }
 
+func newWorkflowTestClient(t *testing.T, actor *integrationFixture, store migration.WorkflowRepository, engine migration.WorkflowEngine) func(string, string, string, int) *httptest.ResponseRecorder {
+	t.Helper()
+	service, err := migration.NewWorkflowService(migration.WorkflowConfig{Store: store, Authorizer: actor.authorizer,
+		Engines: engine, IDs: security.NewTokenGenerator(), Clock: actor.clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := WorkflowRoutes(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := buildAPI(t, actor, routes...)
+	session := fixtureLogin(t, actor)
+	return func(method, path, body string, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		got := dispatch(handler, request(method, path, body, session.CookieToken, session.CSRFToken))
+		if got.Code != status || got.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s %s: status=%d want=%d body=%s", method, path, got.Code, status, got.Body)
+		}
+		return got
+	}
+}
+
 func TestWorkflowRoutesDraftToQueuedJob(t *testing.T) {
 	store := &workflowFixture{}
 	editor := newFixture(t)
@@ -163,30 +186,9 @@ func TestWorkflowRoutesDraftToQueuedJob(t *testing.T) {
 	adminWithoutGrant := newFixture(t)
 	adminWithoutGrant.store.account.Account.PlatformAdmin = true
 	adminWithoutGrant.store.access = security.AccessNone
-	newClient := func(actor *integrationFixture) func(string, string, string, int) *httptest.ResponseRecorder {
-		service, err := migration.NewWorkflowService(migration.WorkflowConfig{Store: store, Authorizer: actor.authorizer,
-			Engines: store, IDs: security.NewTokenGenerator(), Clock: actor.clock})
-		if err != nil {
-			t.Fatal(err)
-		}
-		routes, err := WorkflowRoutes(service)
-		if err != nil {
-			t.Fatal(err)
-		}
-		handler := buildAPI(t, actor, routes...)
-		session := fixtureLogin(t, actor)
-		return func(method, path, body string, status int) *httptest.ResponseRecorder {
-			t.Helper()
-			got := dispatch(handler, request(method, path, body, session.CookieToken, session.CSRFToken))
-			if got.Code != status || got.Header().Get("Cache-Control") != "no-store" {
-				t.Fatalf("%s %s: status=%d want=%d body=%s", method, path, got.Code, status, got.Body)
-			}
-			return got
-		}
-	}
-	send := newClient(editor)
-	leader := newClient(groupLeader)
-	admin := newClient(adminWithoutGrant)
+	send := newWorkflowTestClient(t, editor, store, store)
+	leader := newWorkflowTestClient(t, groupLeader, store, store)
+	admin := newWorkflowTestClient(t, adminWithoutGrant, store, store)
 	base := Prefix + "/databases/" + string(testDatabase)
 	const draft = `{"title":"Add table","up_sql":"CREATE TABLE widgets (id int)","down_sql":"DROP TABLE widgets","irreversible":false,"irreversible_reason":"","mode":"normal","batch":null}`
 	leader("POST", base+"/migrations", draft, 403)

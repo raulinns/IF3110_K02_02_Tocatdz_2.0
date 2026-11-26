@@ -203,9 +203,14 @@ func jobResponse(job migration.JobView) workflowJobResponse {
 		FinishedAt: job.FinishedAt, Partial: job.Partial,
 		Progress: workflowJobProgress{p.BatchesCommitted, p.RowsCommitted, p.BatchesReverted, p.RowsReverted, p.TotalBatches},
 	}
-	if failure := job.Error; failure != nil {
-		response.Error = &workflowJobFailure{Code: failure.Code, Message: failure.Message,
-			SQLState: optionalValue(failure.SQLState), Retryable: failure.Retryable}
-	}
+	response.Error = jobFailureResponse(job.Error)
 	return response
+}
+
+func jobFailureResponse(failure *migration.JobFailure) *workflowJobFailure {
+	if failure == nil {
+		return nil
+	}
+	return &workflowJobFailure{Code: failure.Code, Message: failure.Message,
+		SQLState: optionalValue(failure.SQLState), Retryable: failure.Retryable}
 }

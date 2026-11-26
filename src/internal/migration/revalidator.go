@@ -154,28 +154,15 @@ func approvalsStillValid(change ChangeRequest, current []RequiredApproval) bool 
 
 func applyHistoryTarget(s RevalidationSnapshot, plan *ExecutionPlan) bool {
 	target := s.TargetExecution
-	if s.ChangeRequest.SourceJobID != "" || target == nil || !security.ValidID(target.ID) || target.ID != plan.TargetExecutionID ||
-		target.ID == plan.ReceiptExecutionID || target.DatabaseID != plan.DatabaseID || target.MigrationID != plan.MigrationID ||
-		target.Direction != DirectionUp || target.MigrationRevision != plan.Definition.Revision ||
-		target.Checksum != plan.Definition.Checksum || ChecksumDefinition(target.Definition) != target.Checksum {
+	if s.ChangeRequest.SourceJobID != "" || target == nil || target.ID != plan.TargetExecutionID ||
+		target.ID == plan.ReceiptExecutionID {
 		return false
 	}
-	var expected CommittedExecutionSummary
+	if checkHistoryTarget(historyTarget(s.Position, plan.Kind), *target, plan.Definition, plan.Kind) != nil {
+		return false
+	}
 	if plan.Kind == ChangeRollback {
-		if len(s.Position.Active) == 0 || target.Definition.Irreversible {
-			return false
-		}
-		expected = s.Position.Active[len(s.Position.Active)-1]
 		plan.Direction = DirectionDown
-	} else {
-		if len(s.Position.Forward) == 0 {
-			return false
-		}
-		expected = s.Position.Forward[0]
-	}
-	if expected.ID != target.ID || expected.DatabaseID != plan.DatabaseID || expected.MigrationID != plan.MigrationID ||
-		expected.Checksum != target.Checksum || expected.MigrationRevision != target.MigrationRevision || expected.Direction != DirectionUp {
-		return false
 	}
 	plan.Definition.DefinitionInput = target.Definition
 	return true

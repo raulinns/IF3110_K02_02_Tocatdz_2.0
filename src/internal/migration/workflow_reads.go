@@ -48,15 +48,89 @@ func (s *WorkflowService) FindChangeRequest(ctx context.Context, req Request, id
 // FindJob resolves the database after HTTP authentication, then applies its grant
 // before reading job details.
 func (s *WorkflowService) FindJob(ctx context.Context, actor security.Principal, id security.ID) (JobView, error) {
+	req, err := s.jobRequest(ctx, actor, id)
+	if err != nil {
+		return JobView{}, err
+	}
+	return workflowRead(ctx, s, req, security.ActionViewJob, func() (JobView, error) {
+		return s.deps.Store.FindJob(ctx, req.DatabaseID, id)
+	})
+}
+
+func (s *WorkflowService) jobRequest(ctx context.Context, actor security.Principal, id security.ID) (Request, error) {
 	if !security.ValidID(actor.UserID) || !security.ValidID(actor.SessionID) || actor.AuthVersion == 0 || actor.CSRFEpoch == 0 {
-		return JobView{}, security.ErrUnauthenticated
+		return Request{}, security.ErrUnauthenticated
 	}
 	databaseID, err := s.deps.Store.JobDatabase(ctx, id)
 	if err != nil {
-		return JobView{}, safeError(err)
+		return Request{}, safeError(err)
 	}
-	req := Request{Principal: actor, DatabaseID: databaseID}
-	return workflowRead(ctx, s, req, security.ActionViewJob, func() (JobView, error) {
-		return s.deps.Store.FindJob(ctx, databaseID, id)
+	return Request{Principal: actor, DatabaseID: databaseID}, nil
+}
+
+func (s *WorkflowService) ListAttempts(ctx context.Context, actor security.Principal, id security.ID, page PageQuery) (Page[JobAttempt], error) {
+	req, err := s.jobRequest(ctx, actor, id)
+	if err != nil {
+		return Page[JobAttempt]{}, err
+	}
+	return workflowRead(ctx, s, req, security.ActionViewJob, func() (Page[JobAttempt], error) {
+		return s.deps.Store.ListAttempts(ctx, req.DatabaseID, id, page)
+	})
+}
+
+func (s *WorkflowService) ListJobs(ctx context.Context, req Request, query JobQuery) (Page[JobView], error) {
+	return workflowRead(ctx, s, req, security.ActionViewJob, func() (Page[JobView], error) {
+		return s.deps.Store.ListJobs(ctx, req.DatabaseID, query)
+	})
+}
+
+func (s *WorkflowService) ListExecutions(ctx context.Context, req Request, query ExecutionQuery) (Page[CommittedExecutionSummary], error) {
+	return workflowRead(ctx, s, req, security.ActionViewHistory, func() (Page[CommittedExecutionSummary], error) {
+		return s.deps.Store.ListExecutions(ctx, req.DatabaseID, query)
+	})
+}
+
+func (s *WorkflowService) FindExecution(ctx context.Context, req Request, id security.ID) (Execution, error) {
+	return workflowRead(ctx, s, req, security.ActionViewHistory, func() (Execution, error) {
+		return s.deps.Store.FindExecution(ctx, req.DatabaseID, id)
+	})
+}
+
+func (s *WorkflowService) ListExecutedStatements(ctx context.Context, req Request, id security.ID, page PageQuery) (Page[ExecutedStatement], error) {
+	return workflowRead(ctx, s, req, security.ActionViewHistory, func() (Page[ExecutedStatement], error) {
+		return s.deps.Store.ListExecutedStatements(ctx, req.DatabaseID, id, page)
+	})
+}
+
+type PositionView struct {
+	Version                   PositionVersion
+	Active, Rollback, Forward CommittedExecutionSummary
+	BlockedByJobID            security.ID
+}
+
+func (s *WorkflowService) Position(ctx context.Context, req Request) (PositionView, error) {
+	return workflowRead(ctx, s, req, security.ActionViewHistory, func() (PositionView, error) {
+		position, err := s.deps.Store.ReadPosition(ctx, req.DatabaseID)
+		if err != nil {
+			return PositionView{}, err
+		}
+		view := PositionView{Version: position.Version, BlockedByJobID: position.BlockedByJobID,
+			Active: historyTarget(position, ChangeRollback)}
+		if view.BlockedByJobID != "" {
+			return view, nil
+		}
+		view.Forward = historyTarget(position, ChangeForward)
+		if view.Active.ID != "" {
+			snapshot, err := s.deps.Store.FindExecution(ctx, req.DatabaseID, view.Active.ID)
+			if err != nil {
+				return PositionView{}, err
+			}
+			// Committed executions are immutable, so a separate read cannot
+			// change the snapshot described by the selected position.
+			if !snapshot.Definition.Irreversible && !snapshot.Definition.DownSQL.Empty() {
+				view.Rollback = view.Active
+			}
+		}
+		return view, nil
 	})
 }
