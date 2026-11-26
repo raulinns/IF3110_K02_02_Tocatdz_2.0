@@ -3,7 +3,6 @@ package logging
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -37,24 +36,18 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("uses text logging outside production", func(t *testing.T) {
+	t.Run("uses JSON logging outside production", func(t *testing.T) {
 		var output bytes.Buffer
 
 		logger := New("development", &output)
 		logger.Info("application started", "component", "test")
 
-		logLine := output.String()
-
-		if !strings.Contains(logLine, "level=INFO") {
-			t.Errorf("expected INFO level, got %q", logLine)
+		var record map[string]any
+		if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+			t.Fatal(err)
 		}
-
-		if !strings.Contains(logLine, `msg="application started"`) {
-			t.Errorf("expected application message, got %q", logLine)
-		}
-
-		if !strings.Contains(logLine, "component=test") {
-			t.Errorf("expected component attribute, got %q", logLine)
+		if record["level"] != "INFO" || record["msg"] != "application started" || record["component"] != "test" {
+			t.Errorf("unexpected JSON log: %s", &output)
 		}
 	})
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/explorer"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/logging/sqllog"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -55,6 +56,7 @@ func targetConfig(dsn security.Secret) (*pgxpool.Config, error) {
 		return nil, security.ErrInvalidInput
 	}
 	cfg.MaxConns = targetMaxConns
+	cfg.ConnConfig.Tracer = sqllog.Tracer{Kind: sqllog.Target}
 	cfg.ConnConfig.ConnectTimeout = connectTimeout
 	cfg.ConnConfig.RuntimeParams["application_name"] = "tocatdz-target"
 	cfg.ConnConfig.RuntimeParams["timezone"] = "UTC"

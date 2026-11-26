@@ -1,15 +1,46 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
 	"path"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/logging"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/tracing"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
+
+type httpEventKey struct{}
+type httpEvent struct {
+	actor    string
+	database any
+}
+
+func withHTTPEvent(ctx context.Context, event *httpEvent) context.Context {
+	return context.WithValue(ctx, httpEventKey{}, event)
+}
+
+func markHTTPActor(r *http.Request) *http.Request {
+	event, _ := r.Context().Value(httpEventKey{}).(*httpEvent)
+	if event == nil {
+		return r
+	}
+	if principal, ok := security.PrincipalFromContext(r.Context()); ok {
+		event.actor = string(principal.UserID)
+	}
+	if id := security.ID(r.PathValue("database_id")); security.ValidID(id) {
+		event.database = id
+		op := logging.OperationFromContext(r.Context())
+		op.DatabaseID, op.Actor = id, event.actor
+		return r.WithContext(logging.WithOperation(r.Context(), op))
+	}
+	return r
+}
 
 func (a *API) serve(w http.ResponseWriter, r *http.Request) {
 	id := security.RequestIDFromContext(r.Context())
@@ -25,14 +56,47 @@ func (a *API) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Request-ID", id)
 	w.Header().Set("Cache-Control", "no-store")
 	tracked := &responseWriter{ResponseWriter: w, head: r.Method == http.MethodHead}
+	_, pattern := a.mux.Handler(r)
+	_, route, _ := strings.Cut(pattern, " ")
+	if !strings.HasPrefix(route, Prefix+"/") {
+		route = "unmatched"
+	}
+	method := r.Method
+	if !allowedMethod(method) {
+		method = "OTHER"
+	}
+	event := &httpEvent{actor: "anonymous"}
+	ctx := logging.WithLogger(r.Context(), a.logger)
+	ctx, end := tracing.Start(ctx, "HTTP "+method+" "+route, tracing.Server)
+	ctx = withHTTPEvent(ctx, event)
+	r = r.WithContext(ctx)
+	start := time.Now()
+	aborted := false
+	defer func() {
+		status := tracked.status
+		if status == 0 || aborted {
+			status = http.StatusInternalServerError
+		}
+		outcome := "succeeded"
+		if status >= 400 {
+			outcome = "failed"
+		}
+		a.logger.InfoContext(ctx, "API request",
+			"event", "http.request", "actor", event.actor, "database_id", event.database,
+			"request_id", id, "status", outcome, "http_method", method, "http_route", route,
+			"http_status", status, "duration_ms", float64(time.Since(start))/float64(time.Millisecond))
+		end(status >= 500)
+	}()
 	defer func() {
 		if failure := recover(); failure != nil {
 			if failure == http.ErrAbortHandler {
+				aborted = true
 				panic(failure)
 			}
 			// The panic value, URL, headers and bodies can contain credentials.
 			a.logger.ErrorContext(r.Context(), "API panic recovered", "request_id", id)
 			if tracked.started {
+				aborted = true
 				panic(http.ErrAbortHandler) // Close an incomplete response, never append JSON.
 			}
 			WriteError(tracked, r, nil)
@@ -76,11 +140,13 @@ type responseWriter struct {
 	http.ResponseWriter
 	started bool
 	head    bool
+	status  int
 }
 
 func (w *responseWriter) WriteHeader(status int) {
 	if !w.started {
 		w.started = true
+		w.status = status
 		w.ResponseWriter.WriteHeader(status)
 	}
 }

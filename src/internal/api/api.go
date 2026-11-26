@@ -128,6 +128,7 @@ func (a *API) register(route Route) (err error) {
 		return fmt.Errorf("invalid API route configuration: %w", security.ErrInvalidInput)
 	}
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = markHTTPActor(r)
 		if _, err := ParseQuery(r, route.QueryParameters...); err != nil {
 			WriteError(w, r, err)
 			return

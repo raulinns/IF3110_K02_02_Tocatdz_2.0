@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/logging"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/tracing"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -139,11 +141,11 @@ func safeText(err error) string {
 
 func (w *Worker) now() time.Time { return w.cfg.Clock.Now().UTC() }
 
-func (w *Worker) log(level slog.Level, event string, lease migration.JobLease, attrs ...any) {
+func (w *Worker) log(ctx context.Context, level slog.Level, event string, lease migration.JobLease, attrs ...any) {
 	base := []any{"event", event, "job_id", string(lease.Job.ID), "database_id", string(lease.Job.DatabaseID),
 		"change_request_id", string(lease.Job.ChangeRequestID), "execution_id", string(lease.Job.ExecutionID),
-		"attempt", lease.Job.Attempt, "request_id", lease.Job.RequestID, "worker", w.cfg.Owner}
-	w.cfg.Logger.Log(context.Background(), level, event, append(base, attrs...)...)
+		"attempt", lease.Job.Attempt, "request_id", lease.Job.RequestID, "worker", w.cfg.Owner, "actor", "worker:" + w.cfg.Owner}
+	w.cfg.Logger.Log(ctx, level, event, append(base, attrs...)...)
 }
 
 func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
@@ -154,7 +156,6 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	w.log(slog.LevelInfo, "job.claimed", lease)
 	w.handle(ctx, lease)
 	return true, nil
 }
@@ -175,7 +176,7 @@ func (w *Worker) heartbeat(ctx context.Context, cancelJob context.CancelFunc, le
 				return
 			case <-ticker.C:
 				if _, err := w.cfg.Store.RenewLease(ctx, lease, w.now().Add(w.cfg.LeaseDuration)); errors.Is(err, security.ErrConflict) {
-					w.log(slog.LevelWarn, "job.lease_lost", lease)
+					w.log(ctx, slog.LevelWarn, "job.lease_lost", lease)
 					cancelJob()
 					return
 				}
@@ -188,21 +189,32 @@ func (w *Worker) heartbeat(ctx context.Context, cancelJob context.CancelFunc, le
 type outcome func(ctx context.Context) error
 
 func (w *Worker) handle(parent context.Context, lease migration.JobLease) {
-	jobCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), w.cfg.JobTimeout)
+	jobCtx, cancel := context.WithTimeout(w.jobContext(parent, lease), w.cfg.JobTimeout)
 	defer cancel()
+	jobCtx, endJob := tracing.Start(jobCtx, "job.process", tracing.Consumer)
+	failed := true
+	defer func() { endJob(failed) }()
+	w.log(jobCtx, slog.LevelInfo, "job.claimed", lease, "status", "running")
 	stop := w.heartbeat(jobCtx, cancel, lease)
 	var finish outcome
 	waitStart := w.now()
-	lockErr := w.cfg.Coordinator.WithDatabaseLock(jobCtx, lease.Job.DatabaseID, func(locked context.Context, target migration.LockedTarget) error {
-		w.log(slog.LevelInfo, "lock.acquired", lease, "lock_wait_ms", w.now().Sub(waitStart).Milliseconds())
-		plan, err := w.cfg.Revalidator.Revalidate(locked, lease.Job)
+	lockCtx, endLock := tracing.Start(jobCtx, "lock.acquire", tracing.Internal)
+	acquired := false
+	w.log(lockCtx, slog.LevelInfo, "lock.acquire.start", lease, "status", "start")
+	lockErr := w.cfg.Coordinator.WithDatabaseLock(lockCtx, lease.Job.DatabaseID, func(locked context.Context, target migration.LockedTarget) error {
+		acquired = true
+		endLock(false)
+		w.log(jobCtx, slog.LevelInfo, "lock.acquired", lease, "lock_wait_ms", w.now().Sub(waitStart).Milliseconds())
+		revalidateCtx, endRevalidation := tracing.Start(locked, "revalidate", tracing.Internal)
+		plan, err := w.cfg.Revalidator.Revalidate(revalidateCtx, lease.Job)
+		endRevalidation(err != nil)
 		if err != nil {
-			w.log(slog.LevelWarn, "job.revalidation_failed", lease, "error", safeText(err))
+			w.log(jobCtx, slog.LevelWarn, "job.revalidation_failed", lease, "error", safeText(err))
 			finish = w.final(lease, migration.RunResult{Status: migration.JobFailed, Error: &migration.JobFailure{
 				Code: migration.JobErrorRevalidation, Message: "revalidation failed"}})
 			return nil
 		}
-		w.log(slog.LevelInfo, "job.revalidated", lease)
+		w.log(jobCtx, slog.LevelInfo, "job.revalidated", lease)
 		if err := w.cfg.Store.StartRunning(locked, lease, plan); err != nil {
 			if errors.Is(err, security.ErrConflict) {
 				finish = w.final(lease, migration.RunResult{Status: migration.JobFailed, Error: &migration.JobFailure{
@@ -212,29 +224,52 @@ func (w *Worker) handle(parent context.Context, lease migration.JobLease) {
 			}
 			return nil
 		}
-		w.log(slog.LevelInfo, "sql.exec.start", lease, "migration_id", string(plan.MigrationID), "kind", string(plan.Kind), "direction", string(plan.Direction))
-		started := w.now()
-		result, runErr := w.cfg.Runner.Run(locked, plan, target, w.cfg.Progress)
-		w.log(slog.LevelInfo, "sql.exec.done", lease, "status", string(result.Status), "duration_ms", w.now().Sub(started).Milliseconds(),
-			"error", errorCode(result.Error))
+		name := "sql.exec"
+		if plan.Definition.Mode == migration.ModeBatch {
+			name = "batch.process"
+		}
+		runCtx, endRun := tracing.Start(locked, name, tracing.Internal)
+		meta := logging.OperationFromContext(runCtx)
+		meta.Revision, meta.Direction, meta.Mutation = plan.Definition.Revision, string(plan.Direction), true
+		runCtx = logging.WithOperation(runCtx, meta)
+		result, runErr := w.cfg.Runner.Run(runCtx, plan, target, w.cfg.Progress)
+		failed = runErr != nil || result.Status != migration.JobSucceeded
+		endRun(failed)
 		finish = w.afterRun(lease, result, runErr)
 		return nil
 	})
+	if !acquired {
+		endLock(lockErr != nil)
+	}
 	if lockErr != nil && finish == nil {
 		// Target tidak terjangkau sebelum SQL dikirim.
-		w.log(slog.LevelWarn, "lock.failed", lease, "error", safeText(lockErr))
+		w.log(jobCtx, slog.LevelWarn, "lock.failed", lease, "error", safeText(lockErr))
 		finish = w.retryOrFail(lease, migration.JobFailure{Code: migration.JobErrorConnection, Message: "target unavailable", Retryable: true})
 	}
-	w.log(slog.LevelInfo, "lock.released", lease)
+	if acquired {
+		w.log(jobCtx, slog.LevelInfo, "lock.released", lease, "status", "released")
+	}
 	stop()
-	cleanup, done := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
+	cleanup, done := context.WithTimeout(context.WithoutCancel(jobCtx), 10*time.Second)
 	defer done()
 	if finish != nil {
 		if err := finish(cleanup); err != nil {
+			failed = true
 			// Lease akan kedaluwarsa dan job diselesaikan oleh loop rekonsiliasi.
-			w.log(slog.LevelError, "job.outcome_not_recorded", lease, "error", safeText(err))
+			w.log(jobCtx, slog.LevelError, "job.outcome_not_recorded", lease, "error", safeText(err))
 		}
 	}
+}
+
+func (w *Worker) jobContext(parent context.Context, lease migration.JobLease) context.Context {
+	ctx := tracing.Restore(context.WithoutCancel(parent), lease.Job.TraceContext.Reveal())
+	ctx = security.WithRequestID(ctx, lease.Job.RequestID)
+	ctx = logging.WithLogger(ctx, w.cfg.Logger)
+	return logging.WithOperation(ctx, logging.Operation{
+		Actor: "worker:" + w.cfg.Owner, DatabaseID: lease.Job.DatabaseID, JobID: lease.Job.ID,
+		MigrationID: lease.Job.MigrationID, ChangeRequestID: lease.Job.ChangeRequestID, ExecutionID: lease.Job.ExecutionID,
+		Attempt: lease.Job.Attempt,
+	})
 }
 
 func errorCode(failure *migration.JobFailure) string {
@@ -250,19 +285,25 @@ func (w *Worker) afterRun(lease migration.JobLease, result migration.RunResult, 
 	case result.Status == migration.JobSucceeded && result.Execution != nil:
 		execution := *result.Execution
 		return func(ctx context.Context) error {
-			if err := w.cfg.Store.CompleteCommitted(ctx, lease, execution); err != nil {
+			historyCtx, end := tracing.Start(ctx, "history.append", tracing.Internal)
+			err := w.cfg.Store.CompleteCommitted(historyCtx, lease, execution)
+			end(err != nil)
+			if err != nil {
 				return err
 			}
-			w.log(slog.LevelInfo, "job.succeeded", lease, "migration_id", string(execution.MigrationID))
-			w.log(slog.LevelInfo, "history.appended", lease, "migration_id", string(execution.MigrationID))
+			w.log(ctx, slog.LevelInfo, "job.succeeded", lease, "migration_id", string(execution.MigrationID))
+			w.log(historyCtx, slog.LevelInfo, "history.appended", lease, "status", "committed",
+				"migration_id", string(execution.MigrationID), "migration_revision", execution.MigrationRevision)
 			return nil
 		}
 	case result.Status == migration.JobFailed && result.Error != nil && result.Error.Retryable:
 		return w.retryOrFail(lease, *result.Error)
 	case result.Status == "":
-		w.log(slog.LevelError, "job.no_outcome", lease, "error", safeText(runErr))
-		return w.final(lease, migration.RunResult{Status: migration.JobUncertain, Error: &migration.JobFailure{
-			Code: migration.JobErrorUncertain, Message: "runner returned no proven outcome"}})
+		return func(ctx context.Context) error {
+			w.log(ctx, slog.LevelError, "job.no_outcome", lease, "error", safeText(runErr))
+			return w.final(lease, migration.RunResult{Status: migration.JobUncertain, Error: &migration.JobFailure{
+				Code: migration.JobErrorUncertain, Message: "runner returned no proven outcome"}})(ctx)
+		}
 	default:
 		return w.final(lease, result)
 	}
@@ -273,7 +314,8 @@ func (w *Worker) final(lease migration.JobLease, result migration.RunResult) out
 		if err := w.cfg.Store.RecordOutcome(ctx, lease, result); err != nil {
 			return err
 		}
-		w.log(slog.LevelWarn, "job."+string(result.Status), lease, "error", errorCode(result.Error), "sqlstate", sqlState(result.Error))
+		w.log(ctx, slog.LevelWarn, "job."+string(result.Status), lease, "status", string(result.Status),
+			"error", errorCode(result.Error), "sqlstate", sqlState(result.Error))
 		return nil
 	}
 }
@@ -295,7 +337,8 @@ func (w *Worker) retryOrFail(lease migration.JobLease, failure migration.JobFail
 		if err := w.cfg.Store.ScheduleRetry(ctx, lease, failure, w.now().Add(delay)); err != nil {
 			return err
 		}
-		w.log(slog.LevelWarn, "job.retry_scheduled", lease, "error", string(failure.Code), "sqlstate", failure.SQLState, "retry_in_ms", delay.Milliseconds())
+		w.log(ctx, slog.LevelWarn, "job.retry_scheduled", lease, "status", "scheduled",
+			"error", string(failure.Code), "sqlstate", failure.SQLState, "retry_in_ms", delay.Milliseconds())
 		return nil
 	}
 }
@@ -316,7 +359,6 @@ func (w *Worker) RecoverOnce(ctx context.Context) int {
 		if err != nil {
 			continue
 		}
-		w.log(slog.LevelInfo, "job.recovery_claimed", lease, "status", string(lease.Job.Status))
 		if w.recover(ctx, lease) {
 			resolved++
 		}
@@ -324,9 +366,12 @@ func (w *Worker) RecoverOnce(ctx context.Context) int {
 	return resolved
 }
 
-func (w *Worker) recover(parent context.Context, lease migration.JobLease) bool {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), migration.ExecutionTimeout)
+func (w *Worker) recover(parent context.Context, lease migration.JobLease) (resolved bool) {
+	ctx, cancel := context.WithTimeout(w.jobContext(parent, lease), migration.ExecutionTimeout)
 	defer cancel()
+	ctx, end := tracing.Start(ctx, "job.reconcile", tracing.Consumer)
+	defer func() { end(!resolved) }()
+	w.log(ctx, slog.LevelInfo, "job.recovery_claimed", lease, "status", string(lease.Job.Status))
 	plan, err := w.cfg.Store.RecoveryPlan(ctx, lease.Job.DatabaseID, lease.Job.ID)
 	if err != nil {
 		return false
@@ -361,8 +406,9 @@ func (w *Worker) recover(parent context.Context, lease migration.JobLease) bool 
 		return false
 	}
 	if err := finish(ctx); err != nil {
-		w.log(slog.LevelError, "job.outcome_not_recorded", lease, "error", safeText(err))
+		w.log(ctx, slog.LevelError, "job.outcome_not_recorded", lease, "error", safeText(err))
 		return false
 	}
+	w.log(ctx, slog.LevelInfo, "job.reconciled", lease, "status", "succeeded")
 	return true
 }

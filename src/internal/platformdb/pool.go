@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/logging/sqllog"
 )
 
 const DefaultStartupTimeout = 5 * time.Second
@@ -49,6 +50,7 @@ func Open(
 				return nil, err
 			}
 			config.MaxConns = 10
+			config.ConnConfig.Tracer = sqllog.Tracer{Kind: sqllog.Platform}
 			config.ConnConfig.ConnectTimeout = DefaultStartupTimeout
 			config.ConnConfig.RuntimeParams["application_name"] = "tocatdz-platform"
 			config.ConnConfig.RuntimeParams["timezone"] = "UTC"

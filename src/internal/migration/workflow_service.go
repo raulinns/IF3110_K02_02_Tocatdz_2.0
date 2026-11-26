@@ -3,11 +3,14 @@ package migration
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/dbms"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/logging"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/tracing"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
@@ -93,14 +96,22 @@ func (s *WorkflowService) CreateDefinition(ctx context.Context, req Request, inp
 	if err := s.writeAccess(ctx, req, security.ActionCreateMigration); err != nil {
 		return MigrationDefinition{}, err
 	}
-	return s.definitions.CreateDefinition(ctx, req, input)
+	result, err := s.definitions.CreateDefinition(ctx, req, input)
+	if err == nil {
+		workflowLog(ctx, req, "migration.created", "succeeded", result.ID, "", result.Revision)
+	}
+	return result, err
 }
 
 func (s *WorkflowService) UpdateDefinition(ctx context.Context, req Request, id security.ID, revision uint64, input DefinitionInput) (MigrationDefinition, error) {
 	if err := s.writeAccess(ctx, req, security.ActionUpdateMigration); err != nil {
 		return MigrationDefinition{}, err
 	}
-	return s.definitions.UpdateDefinition(ctx, req, id, revision, input)
+	result, err := s.definitions.UpdateDefinition(ctx, req, id, revision, input)
+	if err == nil {
+		workflowLog(ctx, req, "migration.updated", "succeeded", result.ID, "", result.Revision)
+	}
+	return result, err
 }
 
 func (s *WorkflowService) Submit(ctx context.Context, req Request, input SubmitChange) (ChangeRequest, error) {
@@ -196,6 +207,7 @@ func (s *WorkflowService) Submit(ctx context.Context, req Request, input SubmitC
 	if err != nil {
 		return ChangeRequest{}, workflowError(err)
 	}
+	workflowLog(ctx, req, "migration.submitted", "succeeded", change.MigrationID, change.ID, change.MigrationRevision)
 	return change, nil
 }
 
@@ -210,6 +222,7 @@ func (s *WorkflowService) Decide(ctx context.Context, req Request, id security.I
 	}
 	vote := ApprovalDecision{GroupID: groupID, ActorID: req.Principal.UserID, Decision: decision, Note: note, DecidedAt: s.workflowTime()}
 	var result ChangeRequest
+	newDecision := false
 	err := s.deps.Store.WithWorkflow(ctx, req, func(tx WorkflowTx) error {
 		if err := tx.RequireAccess(security.AccessViewOnly); err != nil {
 			return err
@@ -233,6 +246,7 @@ func (s *WorkflowService) Decide(ctx context.Context, req Request, id security.I
 			for _, group := range required {
 				if group.GroupID == groupID && group.LeaderUserID == vote.ActorID && group.Access == snapshot.Access {
 					result, err = tx.RecordDecision(id, revision, vote)
+					newDecision = err == nil && snapshot.Decision == nil
 					return err
 				}
 			}
@@ -241,6 +255,13 @@ func (s *WorkflowService) Decide(ctx context.Context, req Request, id security.I
 	})
 	if err != nil {
 		return ChangeRequest{}, workflowError(err)
+	}
+	if newDecision {
+		event, status := "migration.approved", "approved"
+		if decision == DecisionReject {
+			event, status = "migration.rejected", "rejected"
+		}
+		workflowLog(ctx, req, event, status, result.MigrationID, id, result.MigrationRevision, slog.String("group_id", string(groupID)))
 	}
 	return result, nil
 }
@@ -260,8 +281,10 @@ func (s *WorkflowService) Enqueue(ctx context.Context, req Request, id security.
 	if err != nil {
 		return JobView{}, err
 	}
+	ctx, end := tracing.Start(ctx, "job.enqueue", tracing.Producer)
 	spec := JobSpec{ID: jobID, ExecutionID: executionID, DatabaseID: req.DatabaseID, ChangeRequestID: id,
-		RequestedBy: req.Principal.UserID, MaxAttempts: DefaultMaxAttempts, RequestID: security.RequestIDFromContext(ctx), QueuedAt: s.workflowTime()}
+		RequestedBy: req.Principal.UserID, MaxAttempts: DefaultMaxAttempts, RequestID: security.RequestIDFromContext(ctx),
+		TraceContext: security.NewSecret(tracing.Inject(ctx)), QueuedAt: s.workflowTime()}
 	var result JobView
 	err = s.deps.Store.WithWorkflow(ctx, req, func(tx WorkflowTx) error {
 		if err := tx.RequireAccess(security.AccessViewEdit); err != nil {
@@ -295,10 +318,24 @@ func (s *WorkflowService) Enqueue(ctx context.Context, req Request, id security.
 		result, err = tx.EnqueueApproved(id, revision, spec)
 		return err
 	})
+	if err == nil && result.ID == jobID {
+		workflowLog(ctx, req, "job.enqueued", "queued", result.MigrationID, id, 0,
+			slog.String("job_id", string(result.ID)), slog.String("execution_id", string(result.ExecutionID)))
+	}
+	end(err != nil)
 	if err != nil {
 		return JobView{}, workflowError(err)
 	}
 	return result, nil
+}
+
+func workflowLog(ctx context.Context, req Request, event, status string, migrationID, changeID security.ID, revision uint64, extra ...slog.Attr) {
+	if logger := logging.FromContext(ctx); logger != nil {
+		op := logging.Operation{Actor: string(req.Principal.UserID), DatabaseID: req.DatabaseID, MigrationID: migrationID,
+			ChangeRequestID: changeID, Revision: revision}
+		attrs := append(op.Attrs(), slog.String("event", event), slog.String("status", status))
+		logger.LogAttrs(ctx, slog.LevelInfo, event, append(attrs, extra...)...)
+	}
 }
 
 func (s *WorkflowService) newWorkflowID() (security.ID, error) {

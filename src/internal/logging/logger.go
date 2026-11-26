@@ -3,24 +3,9 @@ package logging
 import (
 	"io"
 	"log/slog"
-	"strings"
+
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/logging"
 )
 
-func New(environment string, output io.Writer) *slog.Logger {
-	options := &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}
-
-	if strings.EqualFold(
-		strings.TrimSpace(environment),
-		"production",
-	) {
-		return slog.New(
-			slog.NewJSONHandler(output, options),
-		)
-	}
-
-	return slog.New(
-		slog.NewTextHandler(output, options),
-	)
-}
+// New keeps the existing server and worker constructor signature.
+func New(_ string, output io.Writer) *slog.Logger { return logging.New(output) }
