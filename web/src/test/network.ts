@@ -39,4 +39,16 @@ export function realServerErrors() {
   })
 }
 
+// Menolak request tertentu dengan galat umum seperti server Go sungguhan, tanpa reason
+export function rejectRequest(method: string, match: string, status: number, code: string) {
+  const original = globalThis.fetch
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (String(input).includes(match) && (init?.method ?? 'GET') === method) {
+      const message = genericMessages[code] ?? code
+      return new Response(JSON.stringify({ error: { code, message, request_id: 'r' } }), { status, headers: { 'Content-Type': 'application/json' } })
+    }
+    return original(input, init)
+  })
+}
+
 export const callsTo = (spy: { mock: { calls: unknown[][] } }, match: string) => spy.mock.calls.filter((call) => String(call[0]).includes(match)).length

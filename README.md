@@ -162,6 +162,42 @@ Metrik Prometheus, dashboard Grafana, dan Collector dijalankan dengan
 Untuk stress test k6, seed akun dengan password yang sama dengan `K6_PASSWORD` (isi `SEED_SHARED_PASSWORD`),
 lalu jalankan k6 dengan `LEADER_USERS=admin,pengamat` agar kedua leader menyetujui perubahan pada `demo` dan `gudang`.
 
+## Frontend SPA
+
+Seluruh antarmuka, termasuk login dan admin, adalah SPA React 19 + Vite + TypeScript di `web/` yang
+berkomunikasi dengan backend lewat `/api/v1`. Hasil build ditanam ke binary server (`npm run build:embed`),
+sehingga satu proses melayani API dan antarmuka. Server menambahkan nonce acak pada `style-src` halaman utama
+supaya editor SQL (CodeMirror 6, dimuat lazy) bisa memasang gayanya tanpa melonggarkan `script-src`.
+
+Halaman: login, daftar database, schema, tabel dan data, schema diff, migration (editor SQL, mode normal dan batch,
+EXPLAIN), review dan approval, monitor job (polling, progres batch, percobaan, resume dan revert batch),
+riwayat eksekusi (salinan SQL, SQL yang dijalankan per batch, hide rollback, rollback dan forward), serta admin
+(user, group, koneksi, akses). Rujukan kontrak ada di `api/openapi.yaml`, tipenya dibangkitkan dengan `npm run gen:api`.
+
+Perintah dari folder `web/`:
+
+| Perintah | Fungsi |
+| --- | --- |
+| `npm run dev:mock` | Server dev dengan API palsu (MSW); buka `/?as=<username>` untuk melewati login |
+| `npm test` | Unit dan komponen (vitest), berjalan di atas handler mock yang sama |
+| `npm run lint` dan `npx tsc -b` | ESLint dan pemeriksaan tipe |
+| `npx playwright test` | Smoke test browser terhadap `dev:mock` (desktop 1280 px dan mobile 390 px) |
+
+### Pengujian terhadap server sungguhan
+
+Spec `web/e2e/real*.spec.ts` berjalan terhadap server Go dan worker yang asli (PostgreSQL, antrean, worker, CSP). Seed harus
+sudah dijalankan; akun `editor` mengajukan, `admin` dan `pengamat` menjadi leader yang menyetujui.
+
+```sh
+cd web
+E2E_BASE_URL=http://localhost:8080 E2E_ADMIN_PASSWORD=... E2E_VIEWER_PASSWORD=... E2E_EDITOR_PASSWORD=... npx playwright test --project=desktop   # lalu --project=mobile
+```
+
+Setiap peran masuk satu kali (`real-setup.ts`) karena login dibatasi 5 per akun per menit. Cakupannya: alur lengkap buat, ajukan,
+approve oleh semua leader, jalankan, pantau job, riwayat, rollback, dan forward; batch yang berhenti di batch kedua lalu
+dipulihkan dengan revert batch; migration irreversible; satu permintaan terbuka per database; akses lihat saja; serta
+pengukuran scroll horizontal semua halaman pada lebar 360 dan 1440 px dengan data nyata.
+
 ## Akun demo (dari `cmd/seed`)
 
 | Username | Password | Peran |
@@ -234,7 +270,7 @@ dan bukti scan ulang dicatat pada [laporan CodeQL](docs/security/codeql.md).
 ## UI Credits
 
 - Tata letak dan gaya: [Bootstrap Simple Admin Template](https://github.com/alexisbriandev/bootstrap-simple-admin-template) (Apache License 2.0).
-- Bootstrap 5.3.3 (MIT), Font Awesome Free 6 solid (CC BY 4.0 / SIL OFL 1.1 / MIT), dan font Lato (SIL OFL 1.1), semuanya diambil dari folder aset template tersebut. Lisensi disertakan di `src/internal/ui/static`.
+- Bootstrap 5.3.3 (MIT), Font Awesome Free 6 solid (CC BY 4.0 / SIL OFL 1.1 / MIT), dan font Lato (SIL OFL 1.1), semuanya diambil dari folder aset template tersebut. Lisensi disertakan di `web/public/licenses` dan ikut tersaji di `/licenses/*.txt`.
 
 ## Struktur
 
@@ -254,6 +290,9 @@ src/
     ├── mysql       # adapter database viewer dan migration target MySQL
     ├── targetdb    # router dan validator berdasarkan DBMS target
     ├── bootstrap   # perakitan semua komponen
-    ├── ui          # handler HTML, template, CSS
+    ├── spa         # menyajikan hasil build SPA yang ditanam ke binary (CSP nonce, fallback rute klien)
     └── web         # router dan middleware fondasi
+
+web/                # frontend SPA (React, Vite, TypeScript)
+loadtest/k6/        # skrip stress test k6 dan tesnya
 ```

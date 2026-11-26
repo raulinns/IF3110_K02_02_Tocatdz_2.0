@@ -1,5 +1,6 @@
 import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api, path } from './client.ts'
+import { explainConflict } from './errors.ts'
 import { fetchAllPages } from './pages.ts'
 import type { Schemas } from './types.ts'
 
@@ -57,20 +58,22 @@ export const updateUser = (id: string, input: Schemas['UpdateUserInput']) => api
 
 export const createConnection = (input: Schemas['ConnectionInput']) => api.post<Schemas['Connection']>('/admin/connections', input)
 
-export const deleteConnection = (id: string) => api.delete<void>(path`/admin/connections/${id}`)
+const dependsOnWork = 'Tidak dapat dihapus karena masih ada permintaan, job, atau eksekusi yang belum selesai yang bergantung padanya. Selesaikan atau pulihkan dulu, lalu coba lagi.'
+
+export const deleteConnection = (id: string) => api.delete<void>(path`/admin/connections/${id}`).catch(explainConflict(dependsOnWork))
 
 export const createGroup = (input: Schemas['GroupInput']) => api.post<Schemas['Group']>('/admin/groups', input)
 
 export const renameGroup = (id: string, input: Schemas['GroupInput']) => api.patch<Schemas['Group']>(path`/admin/groups/${id}`, input)
 
-export const deleteGroup = (id: string) => api.delete<void>(path`/admin/groups/${id}`)
+export const deleteGroup = (id: string) => api.delete<void>(path`/admin/groups/${id}`).catch(explainConflict(dependsOnWork))
 
 export const addMember = (groupId: string, userId: string) => api.put<void>(path`/admin/groups/${groupId}/members/${userId}`)
 
-export const removeMember = (groupId: string, userId: string) => api.delete<void>(path`/admin/groups/${groupId}/members/${userId}`)
+export const removeMember = (groupId: string, userId: string) => api.delete<void>(path`/admin/groups/${groupId}/members/${userId}`).catch(explainConflict(dependsOnWork))
 
 export const setLeader = (groupId: string, userId: string) => api.put<Schemas['Group']>(path`/admin/groups/${groupId}/leader`, { user_id: userId })
 
 export const saveGrant = (groupId: string, databaseId: string, input: Schemas['GrantInput']) => api.put<Schemas['Grant']>(path`/admin/grants/${groupId}/${databaseId}`, input)
 
-export const revokeGrant = (groupId: string, databaseId: string) => api.delete<void>(path`/admin/grants/${groupId}/${databaseId}`)
+export const revokeGrant = (groupId: string, databaseId: string) => api.delete<void>(path`/admin/grants/${groupId}/${databaseId}`).catch(explainConflict(dependsOnWork))

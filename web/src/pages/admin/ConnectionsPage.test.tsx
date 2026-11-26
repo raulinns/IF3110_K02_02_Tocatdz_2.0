@@ -6,7 +6,7 @@ import { ids } from '../../mocks/ids.ts'
 import { getState } from '../../mocks/state.ts'
 import { setupMockServer } from '../../mocks/testing.ts'
 import { openAs } from '../../test/app.tsx'
-import { interceptFetch } from '../../test/network.ts'
+import { interceptFetch, rejectRequest } from '../../test/network.ts'
 
 setupMockServer(...handlers)
 
@@ -141,6 +141,16 @@ describe('hapus koneksi', () => {
     await user.click(within(await rowOf('pelaporan')).getByRole('button', { name: 'Hapus' }))
     await user.click(screen.getByRole('button', { name: 'Batal' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(await rowOf('pelaporan')).toBeInTheDocument()
+  })
+
+  it('hapus koneksi yang masih ditunggu pekerjaan ditolak server dengan penjelasan', async () => {
+    rejectRequest('DELETE', '/admin/connections/', 409, 'conflict')
+    const { user } = openAs('admin', '/admin/connections')
+    await user.click(within(await rowOf('pelaporan')).getByRole('button', { name: 'Hapus' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Hapus koneksi' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Tidak dapat dihapus karena masih ada permintaan, job, atau eksekusi yang belum selesai')
     expect(await rowOf('pelaporan')).toBeInTheDocument()
   })
 
