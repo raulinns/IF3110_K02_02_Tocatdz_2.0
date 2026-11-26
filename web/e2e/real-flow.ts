@@ -8,13 +8,14 @@ export const database = 'demo'
 export const history = (page: Page) => page.getByRole('table', { name: 'Riwayat eksekusi' })
 
 // Setiap langkah memakai konteks baru dengan sesi perannya, dan tidak boleh ada kesalahan konsol, CSP, atau respons gagal sepanjang langkah
-export async function step(browser: Browser, role: Role, body: (page: Page) => Promise<void>) {
+// Langkah yang memang menguji penolakan server menyebut respons yang diharapkan lewat expected, misalnya /^409 .*\/change-requests$/
+export async function step(browser: Browser, role: Role, body: (page: Page) => Promise<void>, expected: RegExp[] = []) {
   const { page, context, problems } = await openAs(browser, role)
   try {
     await page.goto('/databases')
     await enterDatabase(page, database)
     await body(page)
-    expect(problems).toEqual([])
+    expect(problems.filter((problem) => !expected.some((pattern) => pattern.test(problem)))).toEqual([])
   } finally {
     await context.close()
   }
