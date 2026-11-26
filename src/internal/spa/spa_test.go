@@ -406,13 +406,19 @@ func TestEmbeddedBuildIsServedAndCSPCompatible(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	recorder := serve(handler, http.MethodGet, "/")
-	expectHeader(t, recorder, "Content-Security-Policy", security.ContentSecurityPolicy)
 	if !handler.Built() {
+		expectHeader(t, recorder, "Content-Security-Policy", security.ContentSecurityPolicy)
 		expectStatus(t, recorder, http.StatusServiceUnavailable)
 		return
 	}
 	expectStatus(t, recorder, http.StatusOK)
 	body := recorder.Body.String()
+	// Halaman hasil build memuat meta nonce sehingga style-src pada headernya memuat nonce yang sama
+	nonce := nonceMeta.FindStringSubmatch(body)
+	if nonce == nil {
+		t.Fatalf("index.html tidak memuat meta csp-nonce yang diisi server: %s", body)
+	}
+	expectHeader(t, recorder, "Content-Security-Policy", withStyleNonce(security.ContentSecurityPolicy, nonce[1]))
 	if found := inlineScripts(body); len(found) > 0 {
 		t.Errorf("index.html memuat <script> inline yang diblokir CSP: %v", found)
 	}
@@ -423,5 +429,126 @@ func TestEmbeddedBuildIsServedAndCSPCompatible(t *testing.T) {
 		if strings.HasPrefix(name, "assets/") && serve(handler, http.MethodGet, "/"+name).Header().Get("Cache-Control") != cacheImmutable {
 			t.Errorf("aset %s tidak di-cache panjang", name)
 		}
+	}
+}
+
+var nonceMeta = regexp.MustCompile(`<meta name="csp-nonce" content="([^"]*)"`)
+
+const noncedIndex = `<!doctype html><html><head><meta name="csp-nonce" content="__CSP_NONCE__"><script type="module" src="/assets/index-abc.js"></script></head><body><div id="root"></div></body></html>`
+
+func noncedHandler(t *testing.T) *Handler {
+	t.Helper()
+	files := testFiles()
+	files["index.html"] = &fstest.MapFile{Data: []byte(noncedIndex)}
+	return newTestHandler(t, files)
+}
+
+func nonceOf(t *testing.T, recorder *httptest.ResponseRecorder) string {
+	t.Helper()
+	match := nonceMeta.FindStringSubmatch(recorder.Body.String())
+	if match == nil {
+		t.Fatalf("meta nonce tidak ada: %q", recorder.Body.String())
+	}
+	return match[1]
+}
+
+func TestIndexWithPlaceholderReceivesANonceInBodyAndHeader(t *testing.T) {
+	recorder := serve(noncedHandler(t), http.MethodGet, "/")
+	expectStatus(t, recorder, http.StatusOK)
+	nonce := nonceOf(t, recorder)
+	if nonce == noncePlaceholder || nonce == "" {
+		t.Fatalf("penanda tidak diganti: %q", nonce)
+	}
+	if strings.Contains(recorder.Body.String(), noncePlaceholder) {
+		t.Fatal("penanda nonce masih ada di body")
+	}
+	expectHeader(t, recorder, "Content-Security-Policy", withStyleNonce(security.ContentSecurityPolicy, nonce))
+	expectHeader(t, recorder, "Cache-Control", "no-store")
+	expectHeader(t, recorder, "X-Content-Type-Options", "nosniff")
+}
+
+func TestEachResponseGetsADifferentNonce(t *testing.T) {
+	handler := noncedHandler(t)
+	seen := map[string]bool{}
+	for range 20 {
+		nonce := nonceOf(t, serve(handler, http.MethodGet, "/"))
+		if seen[nonce] {
+			t.Fatalf("nonce %q dipakai ulang", nonce)
+		}
+		seen[nonce] = true
+	}
+}
+
+func TestNonceOnlyExtendsStyleSrc(t *testing.T) {
+	policy := serve(noncedHandler(t), http.MethodGet, "/").Header().Get("Content-Security-Policy")
+	if !strings.Contains(policy, "script-src 'self';") || strings.Contains(policy, "unsafe-inline") || strings.Contains(policy, "unsafe-eval") {
+		t.Fatalf("script-src atau unsafe berubah: %s", policy)
+	}
+	if strings.Count(policy, "'nonce-") != 1 || !strings.Contains(policy, "style-src 'self' 'nonce-") {
+		t.Fatalf("nonce harus tepat satu dan di style-src: %s", policy)
+	}
+	rest := strings.Replace(policy, "style-src 'self' 'nonce-"+nonceOfPolicy(policy)+"'", "style-src 'self'", 1)
+	if rest != security.ContentSecurityPolicy {
+		t.Fatalf("bagian lain kebijakan berubah: %s | %s", rest, security.ContentSecurityPolicy)
+	}
+}
+
+func nonceOfPolicy(policy string) string {
+	start := strings.Index(policy, "'nonce-") + len("'nonce-")
+	return policy[start : start+strings.Index(policy[start:], "'")]
+}
+
+func TestNonceIsSafeInAnAttributeAndInThePolicy(t *testing.T) {
+	for range 50 {
+		nonce := nonceOf(t, serve(noncedHandler(t), http.MethodGet, "/"))
+		if !regexp.MustCompile(`^[A-Za-z0-9+/]{22}==$`).MatchString(nonce) {
+			t.Fatalf("nonce tidak berupa base64 16 byte: %q", nonce)
+		}
+	}
+}
+
+func TestClientRoutesAndHeadRequestsAlsoGetTheNonce(t *testing.T) {
+	handler := noncedHandler(t)
+	page := serve(handler, http.MethodGet, "/databases/abc/history")
+	expectStatus(t, page, http.StatusOK)
+	expectHeader(t, page, "Content-Security-Policy", withStyleNonce(security.ContentSecurityPolicy, nonceOf(t, page)))
+
+	head := serve(handler, http.MethodHead, "/login")
+	expectStatus(t, head, http.StatusOK)
+	if head.Body.Len() != 0 {
+		t.Fatalf("HEAD memiliki body: %q", head.Body.String())
+	}
+	if !strings.Contains(head.Header().Get("Content-Security-Policy"), "style-src 'self' 'nonce-") {
+		t.Fatalf("HEAD tidak memperoleh nonce: %s", head.Header().Get("Content-Security-Policy"))
+	}
+}
+
+func TestContentLengthMatchesTheRewrittenBody(t *testing.T) {
+	recorder := serve(noncedHandler(t), http.MethodGet, "/")
+	if got := recorder.Header().Get("Content-Length"); got != strconv.Itoa(recorder.Body.Len()) {
+		t.Fatalf("Content-Length = %s, body %d byte", got, recorder.Body.Len())
+	}
+}
+
+func TestOtherFilesKeepTheBasePolicy(t *testing.T) {
+	handler := noncedHandler(t)
+	for _, target := range []string{"/theme.js", "/assets/index-abc.js", "/assets/index-abc.css"} {
+		recorder := serve(handler, http.MethodGet, target)
+		expectStatus(t, recorder, http.StatusOK)
+		expectHeader(t, recorder, "Content-Security-Policy", security.ContentSecurityPolicy)
+	}
+}
+
+func TestIndexWithoutPlaceholderKeepsTheBasePolicy(t *testing.T) {
+	recorder := serve(newTestHandler(t, testFiles()), http.MethodGet, "/")
+	expectHeader(t, recorder, "Content-Security-Policy", security.ContentSecurityPolicy)
+	if recorder.Body.String() != indexHTML {
+		t.Fatalf("body berubah: %q", recorder.Body.String())
+	}
+}
+
+func TestWithStyleNonceLeavesPoliciesWithoutStyleSrcUntouched(t *testing.T) {
+	if got := withStyleNonce("default-src 'self'", "x"); got != "default-src 'self'" {
+		t.Fatalf("kebijakan berubah: %s", got)
 	}
 }

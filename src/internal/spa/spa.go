@@ -3,8 +3,10 @@ package spa
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"io/fs"
 	"net/http"
@@ -23,6 +25,8 @@ const (
 	cacheNever      = "no-store"
 	indexName       = "index.html"
 	assetsDir       = "assets"
+	// Penanda di index.html yang diganti dengan nonce baru pada setiap respons
+	noncePlaceholder = "__CSP_NONCE__"
 )
 
 // Path ini milik backend sehingga tidak pernah dijawab dengan halaman SPA
@@ -46,6 +50,8 @@ type asset struct {
 	contentType string
 	etag        string
 	cache       string
+	// Halaman yang memuat penanda nonce dan sehingga header CSP-nya dibuat per respons
+	nonced bool
 }
 
 type Handler struct {
@@ -93,7 +99,7 @@ func newHandler(root fs.FS) (*Handler, error) {
 }
 
 func newAsset(name string, body []byte) *asset {
-	a := &asset{body: body, contentType: contentTypeFor(name, body), cache: cacheRevalidate}
+	a := &asset{body: body, contentType: contentTypeFor(name, body), cache: cacheRevalidate, nonced: name == indexName && bytes.Contains(body, []byte(noncePlaceholder))}
 	switch {
 	case name == indexName:
 		a.cache = cacheNever
@@ -156,6 +162,10 @@ func (h *Handler) fallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) write(w http.ResponseWriter, r *http.Request, a *asset) {
+	if a.nonced {
+		h.writeNonced(w, r, a)
+		return
+	}
 	header := w.Header()
 	header.Set("Content-Type", a.contentType)
 	header.Set("Cache-Control", a.cache)
@@ -163,6 +173,33 @@ func (h *Handler) write(w http.ResponseWriter, r *http.Request, a *asset) {
 		header.Set("ETag", a.etag)
 	}
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(a.body))
+}
+
+// Editor SQL menyuntikkan tag style saat runtime sehingga halaman memperoleh nonce yang diizinkan style-src, dan nonce yang sama dibaca SPA dari meta tag
+func (h *Handler) writeNonced(w http.ResponseWriter, r *http.Request, a *asset) {
+	nonce, err := newNonce()
+	if err != nil {
+		reject(w, http.StatusInternalServerError)
+		return
+	}
+	header := w.Header()
+	header.Set("Content-Type", a.contentType)
+	header.Set("Cache-Control", a.cache)
+	header.Set("Content-Security-Policy", withStyleNonce(security.ContentSecurityPolicy, nonce))
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(bytes.ReplaceAll(a.body, []byte(noncePlaceholder), []byte(nonce))))
+}
+
+func newNonce() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(raw), nil
+}
+
+// Hanya style-src yang diperluas dan script-src tetap hanya 'self'
+func withStyleNonce(policy, nonce string) string {
+	return strings.Replace(policy, "style-src 'self'", "style-src 'self' 'nonce-"+nonce+"'", 1)
 }
 
 func reject(w http.ResponseWriter, status int) {
