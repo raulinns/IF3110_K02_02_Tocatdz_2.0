@@ -9,7 +9,7 @@ import (
 )
 
 // ValidationError contains trusted, user-facing domain messages, never decoder
-// or driver errors. Field keys use K1 paths, e.g. batch.key_column.
+// or driver errors. Field keys use OpenAPI paths, e.g. batch.key_column.
 type ValidationError struct {
 	Fields map[string][]string
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
-// K2 persistence ports are implemented by the stores and consumed by the domain services.
+// Persistence ports are implemented by the stores and consumed by the domain services.
 // Methods return security's error categories (errors.Is), never driver errors.
 // Every lookup includes DatabaseID. A valid ID from another DB is ErrNotFound.
 // Reads alone DO NOT authorize callers. Application services enforce permissions.

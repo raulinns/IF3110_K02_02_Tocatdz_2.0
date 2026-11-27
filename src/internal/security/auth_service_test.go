@@ -167,6 +167,8 @@ func TestAuthConflictRetryRechecksCSRFAndHonorsLogout(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			f := newAuthFixture(t)
 			first := f.login(t)
+			// Sesi yang baru dilihat tidak ditulis ulang, jadi last_seen dibuat cukup lama agar jalur CAS ikut berjalan.
+			f.clock.add(lastSeenWriteInterval)
 			switch scenario {
 			case "retry":
 				f.store.advanceHook = func(store *authTestStore) {
@@ -428,10 +430,64 @@ func TestAuthContextAndMalformedTokenDoNotReachPersistence(t *testing.T) {
 func TestAuthExpiryWhileWaitingForLockCannotRefreshSession(t *testing.T) {
 	f := newAuthFixture(t)
 	first := f.login(t)
+	f.clock.add(lastSeenWriteInterval)
 	f.store.advanceHook = func(*authTestStore) { f.clock.add(30 * time.Minute) }
 	_, err := f.service.Authenticate(context.Background(), first.CookieToken, nil)
 	assertAuthError(t, err, ErrUnauthenticated)
 	if f.store.sessions[first.Principal.SessionID].LastSeenAt != f.store.sessions[first.Principal.SessionID].CreatedAt {
 		t.Fatal("expired request refreshed session after waiting for lock")
 	}
+}
+
+func TestAuthRecentSessionIsNotRewrittenAndParallelRequestsAllSucceed(t *testing.T) {
+	f := newAuthFixture(t)
+	first := f.login(t)
+	const parallel = 40
+	errs := make(chan error, parallel)
+	for range parallel {
+		go func() {
+			_, err := f.service.Authenticate(context.Background(), first.CookieToken, nil)
+			errs <- err
+		}()
+	}
+	for range parallel {
+		if err := <-errs; err != nil {
+			t.Fatalf("parallel request on one session failed: %v", err)
+		}
+	}
+	if f.store.advanceCalls != 0 {
+		t.Fatalf("recent session was written %d times, want 0", f.store.advanceCalls)
+	}
+}
+
+func TestAuthStaleLastSeenIsWrittenOnce(t *testing.T) {
+	f := newAuthFixture(t)
+	first := f.login(t)
+	f.clock.add(lastSeenWriteInterval)
+	if _, err := f.service.Authenticate(context.Background(), first.CookieToken, nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.store.advanceCalls != 1 {
+		t.Fatalf("stale last_seen wrote %d times, want 1", f.store.advanceCalls)
+	}
+	session := f.store.sessions[first.Principal.SessionID]
+	if !session.LastSeenAt.Equal(f.clock.Now()) {
+		t.Fatal("last_seen was not refreshed")
+	}
+	// Request berikutnya langsung setelahnya tidak menulis lagi.
+	if _, err := f.service.Authenticate(context.Background(), first.CookieToken, nil); err != nil || f.store.advanceCalls != 1 {
+		t.Fatalf("immediate follow-up wrote again: err=%v writes=%d", err, f.store.advanceCalls)
+	}
+}
+
+func TestAuthToleratesSmallClockSkewButNotLargeOnes(t *testing.T) {
+	f := newAuthFixture(t)
+	first := f.login(t)
+	f.clock.add(-clockSkewTolerance)
+	if _, err := f.service.Authenticate(context.Background(), first.CookieToken, nil); err != nil {
+		t.Fatalf("session created %v in the future was rejected: %v", clockSkewTolerance, err)
+	}
+	f.clock.add(-time.Second)
+	_, err := f.service.Authenticate(context.Background(), first.CookieToken, nil)
+	assertAuthError(t, err, ErrUnauthenticated)
 }

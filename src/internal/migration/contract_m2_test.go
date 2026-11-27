@@ -103,11 +103,11 @@ func TestM2ContractReferencesAndSecurity(t *testing.T) {
 	components := object(t, doc["components"])
 	cookie := object(t, object(t, components["securitySchemes"])["sessionCookie"])
 	if cookie["name"] != security.SessionCookieName || cookie["in"] != "cookie" {
-		t.Fatal("K1 cookie scheme differs from M1")
+		t.Fatal("OpenAPI cookie scheme differs from M1")
 	}
 	csrf := object(t, object(t, components["parameters"])["csrf"])
 	if csrf["name"] != security.CSRFHeaderName || csrf["required"] != true {
-		t.Fatal("K1 CSRF header differs from M1")
+		t.Fatal("OpenAPI CSRF header differs from M1")
 	}
 	ids := map[string]bool{}
 	pathParam := regexp.MustCompile(`\{([^}]+)\}`)
@@ -165,7 +165,7 @@ func TestM2ContractReferencesAndSecurity(t *testing.T) {
 		"getJob", "listJobAttempts", "listDatabaseJobs", "listExecutions", "getExecution", "listExecutedStatements", "getPosition", "health", "metrics",
 	} {
 		if !ids[id] {
-			t.Errorf("missing K1 operation %s", id)
+			t.Errorf("missing OpenAPI operation %s", id)
 		}
 	}
 }
@@ -199,17 +199,17 @@ func TestM2ContractEnumParityAndLimits(t *testing.T) {
 		slices.Sort(got)
 		slices.Sort(expected)
 		if !slices.Equal(got, expected) {
-			t.Errorf("%s: K1 %v != K2 %v", name, got, expected)
+			t.Errorf("%s: OpenAPI %v != domain %v", name, got, expected)
 		}
 	}
 	props := object(t, object(t, schemas["BatchConfig"])["properties"])
 	batchSize := object(t, props["batch_size"])
 	if batchSize["minimum"] != migration.MinBatchSize || batchSize["maximum"] != migration.MaxBatchSize {
-		t.Fatal("batch bounds differ between K1 and K2")
+		t.Fatal("batch bounds differ between OpenAPI and the domain types")
 	}
 	jobProps := object(t, object(t, schemas["Job"])["properties"])
 	if object(t, jobProps["max_attempts"])["maximum"] != migration.MaxAttemptsLimit {
-		t.Fatal("retry bound differs between K1 and K2")
+		t.Fatal("retry bound differs between OpenAPI and the domain types")
 	}
 	for _, summary := range []string{"MigrationSummary", "ExecutionSummary"} {
 		props := object(t, object(t, schemas[summary])["properties"])

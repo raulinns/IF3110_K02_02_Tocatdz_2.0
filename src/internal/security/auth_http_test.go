@@ -52,6 +52,7 @@ func TestProtectedMiddlewareBlocksInvalidRequestsWithoutSideEffects(t *testing.T
 				f.store.lookupErr = errors.New("private password canary")
 				want = http.StatusServiceUnavailable
 			case "conflict":
+				f.clock.add(lastSeenWriteInterval)
 				f.store.advanceErr = ErrConflict
 				want = http.StatusConflict
 			}

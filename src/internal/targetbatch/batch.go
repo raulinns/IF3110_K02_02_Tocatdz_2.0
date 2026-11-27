@@ -1,4 +1,4 @@
-// Package targetbatch berisi kapabilitas batch (K4) pada koneksi target yang sedang dikunci.
+// Package targetbatch berisi kapabilitas batch pada koneksi target yang sedang dikunci.
 package targetbatch
 
 import (

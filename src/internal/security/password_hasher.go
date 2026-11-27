@@ -63,7 +63,8 @@ func parsePasswordPHC(encoded Secret) (passwordPHC, error) {
 		}
 		values[i] = parsed
 	}
-	if values[0] < 19456 || values[0] > 65536 || values[1] < 2 || values[1] > 4 || values[2] < 1 || values[2] > 4 {
+	memory, iterations, parallelism := values[0], values[1], values[2]
+	if memory < 19456 || memory > 65536 || iterations < 2 || iterations > 4 || parallelism < 1 || parallelism > 4 {
 		return passwordPHC{}, ErrInvalidCredentials
 	}
 	decode := func(value string, size int) ([]byte, error) {
@@ -84,7 +85,7 @@ func parsePasswordPHC(encoded Secret) (passwordPHC, error) {
 	if err != nil {
 		return passwordPHC{}, err
 	}
-	return passwordPHC{uint32(values[0]), uint32(values[1]), uint8(values[2]), salt, key}, nil
+	return passwordPHC{uint32(memory), uint32(iterations), uint8(parallelism), salt, key}, nil
 }
 
 func (h *Argon2idHasher) key(ctx context.Context, password Secret, params passwordPHC) ([]byte, error) {

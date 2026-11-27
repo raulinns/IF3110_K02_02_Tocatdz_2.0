@@ -332,6 +332,8 @@ func TestM2WorkerRecoveryRequeuesJobThatNeverStarted(t *testing.T) {
 	f.process(t)
 	if got := f.job(t, queued.ID); got.Status != migration.JobSucceeded || got.Attempt != 2 || !f.tableExists(t, "m2_later") {
 		t.Fatalf("retried job = %s attempt %d", got.Status, got.Attempt)
+	} else if got.Error != nil {
+		t.Fatalf("succeeded job still carries the error of an earlier attempt: %+v", got.Error)
 	}
 	attempts, err := f.store.ListAttempts(ctx, f.database, queued.ID, migration.PageQuery{})
 	must(t, err)

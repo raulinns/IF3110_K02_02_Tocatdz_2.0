@@ -12,7 +12,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
-// M2Store mengimplementasikan port K2 di database platform. Store tidak melakukan otorisasi.
+// M2Store mengimplementasikan port persistence workflow di database platform. Store tidak melakukan otorisasi.
 type M2Store struct{ pool *pgxpool.Pool }
 
 var (

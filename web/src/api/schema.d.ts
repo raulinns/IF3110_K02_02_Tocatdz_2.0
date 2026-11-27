@@ -1216,7 +1216,7 @@ export interface components {
             /** Format: int64 */
             destructive_count: number;
         };
-        /** @description PostgreSQL UPDATE-only, K4 coordination required. Identifiers are single names, max 63 UTF-8 bytes. Key must be unique, non-null, immutable smallint/integer/bigint. scope_where is a restricted expression, not arbitrary SQL. */
+        /** @description PostgreSQL UPDATE-only batch mode. Identifiers are single names, max 63 UTF-8 bytes. Key must be unique, non-null, immutable smallint/integer/bigint. scope_where is a restricted expression, not arbitrary SQL. */
         BatchConfig: {
             schema: string;
             table: string;

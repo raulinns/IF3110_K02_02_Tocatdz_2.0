@@ -13,7 +13,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
-// ChecksumDefinition implements the K2 version-1 wire-independent checksum.
+// ChecksumDefinition implements the version-1 definition checksum, independent of the wire format.
 // Call ValidateDefinition before persisting new definitions.
 func ChecksumDefinition(input DefinitionInput) DefinitionChecksum {
 	type canonicalBatch struct {
@@ -107,7 +107,7 @@ func validateDefinitionShape(input DefinitionInput) error {
 			!validBatchIdentifier(b.Schema) || !validBatchIdentifier(b.Table) || !validBatchIdentifier(b.KeyColumn) {
 			return security.ErrInvalidInput
 		}
-		// The current K4 runner cannot enforce a predicate. Fail closed until
+		// The current batch runner cannot enforce a predicate. Fail closed until
 		// the integrator adds predicate support and expands its validation.
 		if !b.ScopeWhere.Empty() {
 			return fmt.Errorf("batch.scope_where is not supported by the runner: %w", security.ErrInvalidInput)

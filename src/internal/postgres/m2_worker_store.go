@@ -324,7 +324,9 @@ func (s *M2Store) CompleteCommitted(ctx context.Context, lease migration.JobLeas
 			WHERE database_id = $1`, string(execution.DatabaseID), version, string(execution.JobID), nullID(security.ID(job.source))); err != nil {
 			return mapError(err)
 		}
-		if _, err := tx.Exec(ctx, `UPDATE jobs SET status = 'succeeded', finished_at = $2, lease_owner = NULL, lease_until = NULL, partial = false
+		// Galat attempt sebelumnya tetap tercatat di job_attempts; job yang akhirnya sukses tidak membawa galat.
+		if _, err := tx.Exec(ctx, `UPDATE jobs SET status = 'succeeded', finished_at = $2, lease_owner = NULL, lease_until = NULL, partial = false,
+				last_error_code = NULL, last_error_message = '', last_sqlstate = NULL, last_error_retryable = false
 			WHERE id = $1`, string(execution.JobID), at); err != nil {
 			return mapError(err)
 		}

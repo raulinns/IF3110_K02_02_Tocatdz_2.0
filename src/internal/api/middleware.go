@@ -117,7 +117,7 @@ func (a *API) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// ServeMux's built-in 404/405 handlers are text. Determine Allow using the
-	// same pattern matcher, then emit the K1 envelope without buffering responses.
+	// same pattern matcher, then emit the JSON error envelope without buffering responses.
 	methods := append(slices.Clone(a.methods), http.MethodHead)
 	allowed := []string{}
 	for _, method := range methods {

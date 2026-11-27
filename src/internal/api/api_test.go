@@ -207,7 +207,7 @@ func TestAPIIsProtectedByDefaultAndPreservesJSONStatusFromGuard(t *testing.T) {
 	if w.Code != 401 || calls != 0 || !strings.Contains(w.Body.String(), `"code":"unauthenticated"`) {
 		t.Fatal("default route was not authenticated")
 	}
-	// A domain error originating inside the guard must retain K1's 422 rather
+	// A domain error originating inside the guard must retain the documented 422 rather
 	// than being forced back to the HTML mapper's 400.
 	session := fixtureLogin(t, f)
 	f.cfg.Security.Auth = authWithDomainFailure{Authenticator: f.auth}

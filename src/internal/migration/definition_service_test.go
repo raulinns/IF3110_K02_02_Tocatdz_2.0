@@ -21,7 +21,7 @@ func batchDefinition() DefinitionInput {
 func TestDefinitionValidationAndCanonicalChecksum(t *testing.T) {
 	input := normalDefinition()
 	if got := fmt.Sprintf("%x", ChecksumDefinition(input)); got != "2d1d2608de76d78f25ad2ba34577509d51ae6aee9f41127db71762e27c69d443" {
-		t.Fatal("checksum differs from K2 fixture", got)
+		t.Fatal("checksum differs from the checksum fixture", got)
 	}
 	if err := ValidateDefinition(context.Background(), input); err != nil {
 		t.Fatal(err)

@@ -32,7 +32,7 @@ const (
 )
 
 // AdminRoutes mounts the M1-backed subset until the M2 repository is available.
-// Supplying M2 enables the full K1 admin surface. Append to Config.Routes.
+// Supplying M2 enables the full OpenAPI admin surface. Append to Config.Routes.
 func AdminRoutes(cfg AdminConfig) ([]Route, error) {
 	if cfg.Service == nil || cfg.Logger == nil {
 		return nil, fmt.Errorf("admin service and logger are required: %w", security.ErrInvalidInput)
