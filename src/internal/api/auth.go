@@ -11,7 +11,7 @@ import (
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 )
 
-// GroupLeadership is the consumer-owned subset of K2's LeaderDirectory. The
+// GroupLeadership is the consumer-owned subset of migration.LeaderDirectory. The
 // database owner can implement both without making auth import migration/worker.
 // Return current group IDs whose active leader is userID; errors are not empty lists.
 type GroupLeadership interface {
@@ -22,7 +22,7 @@ type AuthConfig struct {
 	Leaders GroupLeadership
 }
 
-// UserResponse is an explicit K1 DTO, never a serialized Account or Principal.
+// UserResponse is an explicit OpenAPI DTO, never a serialized Account or Principal.
 // Auth responses always have Active=true. Admin responses use the stored state.
 type UserResponse struct {
 	ID            security.ID `json:"id"`

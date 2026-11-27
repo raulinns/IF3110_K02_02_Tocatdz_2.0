@@ -155,7 +155,7 @@ func adminTestAPI(t *testing.T, f *integrationFixture, repo *adminPersistenceFix
 		t.Fatal(err)
 	}
 	if withM2 && len(routes) != 17 {
-		t.Fatalf("wanted all 17 K1 operations, got %d", len(routes))
+		t.Fatalf("wanted all 17 OpenAPI admin operations, got %d", len(routes))
 	}
 	return buildAPI(t, f, routes...)
 }

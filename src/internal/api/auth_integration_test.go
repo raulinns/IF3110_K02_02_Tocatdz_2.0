@@ -24,7 +24,7 @@ func TestAuthRoutesLoginMeRotationLogoutIntegration(t *testing.T) {
 	loginBody := w.Body.String()
 	view := readSession(t, w)
 	if view.User.ID != testUser || view.User.Username != "viewer" || !view.User.Active || !view.User.PlatformAdmin || !view.PlatformAdmin || len(view.CSRFToken) != 43 || len(view.LeaderOf) != 1 {
-		t.Fatal("login response differs from K1 AuthMe")
+		t.Fatal("login response differs from the OpenAPI AuthMe schema")
 	}
 	if !cookieHeader.HttpOnly || !cookieHeader.Secure || cookieHeader.SameSite != http.SameSiteLaxMode || cookieHeader.Path != "/" || w.Header().Get("Location") != "" {
 		t.Fatal("unsafe login cookie or HTML redirect")

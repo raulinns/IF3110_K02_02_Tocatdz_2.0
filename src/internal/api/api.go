@@ -1,4 +1,4 @@
-// Package api provides the K1 JSON transport and opt-in authentication routes.
+// Package api provides the JSON API transport and opt-in authentication routes.
 // It does not assemble stores or start a server/worker.
 package api
 

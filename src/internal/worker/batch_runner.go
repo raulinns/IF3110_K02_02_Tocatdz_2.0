@@ -21,7 +21,7 @@ import (
 
 const checkpointPage = 500
 
-// BatchRunner menjalankan migration K4: satu transaksi target per batch berisi UPDATE dan checkpoint.
+// BatchRunner menjalankan migration batch: satu transaksi target per batch berisi UPDATE dan checkpoint.
 // Batch yang gagal hanya membatalkan dirinya; hasilnya partial dan bisa di-resume atau di-revert.
 type BatchRunner struct{ clock security.Clock }
 

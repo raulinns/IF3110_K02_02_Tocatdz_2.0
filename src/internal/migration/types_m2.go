@@ -31,7 +31,7 @@ const (
 	DefinitionFrozen DefinitionState = "frozen"
 )
 
-// BatchConfig is K4's UPDATE-only contract. UpSQL/DownSQL contain SET assignments,
+// BatchConfig is the UPDATE-only batch contract. UpSQL/DownSQL contain SET assignments,
 // not full statements. Schema and table are separate identifiers, never SQL paths.
 // The key is an immutable, non-null, unique PostgreSQL integer column.
 type BatchConfig struct {
@@ -52,7 +52,7 @@ type DefinitionInput struct {
 	Batch              *BatchConfig // Non-nil iff ModeBatch.
 }
 
-// DefinitionChecksum is SHA-256, encoded as 64 lowercase hex characters in K1.
+// DefinitionChecksum is SHA-256, encoded as 64 lowercase hex characters in the OpenAPI contract.
 // Canonical input and versioning are defined by the types and constructors below.
 type DefinitionChecksum [32]byte
 
@@ -135,7 +135,7 @@ type SubmitChange struct {
 	MigrationID       security.ID
 	MigrationRevision uint64
 	Kind              ChangeKind
-	TargetExecutionID security.ID // Required for rollback/forward; see K2.
+	TargetExecutionID security.ID // Required for rollback/forward.
 	SourceJobID       security.ID // Required for resume/revert; optional apply only for an explicit repair.
 	RetryOfJobID      security.ID // Server-owned normal retry lineage, set by RetryFailedJob.
 }
@@ -229,7 +229,7 @@ type JobView struct {
 	Partial               bool
 	Progress              BatchProgress
 	Error                 *JobFailure
-	ScopeMax              *string // Internal frozen scope; excluded from K1 job DTO.
+	ScopeMax              *string // Internal frozen scope; excluded from the job DTO.
 }
 
 // Checkpoint ranges describe the original job's fixed scope. Cursor strings are
@@ -314,7 +314,7 @@ type ExecutionPlan struct {
 	ScopeMax                                        *string
 }
 
-// PageQuery uses K1 page/limit defaults and bounds. Stable order includes an ID
+// PageQuery uses the OpenAPI page/limit defaults and bounds. Stable order includes an ID
 // tie-breaker; adapters return an empty Items slice rather than nil in HTTP DTOs.
 type PageQuery struct{ Page, Limit int }
 type Page[T any] struct {
