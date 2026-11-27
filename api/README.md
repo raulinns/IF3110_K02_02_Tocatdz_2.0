@@ -81,7 +81,8 @@ Poll jobs while `queued`/`running` (e.g. every two seconds). Stop automatic poll
 on other statuses and show a recovery/reconciliation action or manual refresh.
 `uncertain` may later be reconciled; it is not evidence of failure. Unknown totals
 are `null`, never an invented percent. Read failures from `/jobs/{job_id}/attempts`;
-execution history intentionally contains only committed operations.
+the `/executions` resource contains only proven commits for the linear position stack.
+The SPA Riwayat page reads `/databases/{database_id}/history`, which includes **all attempts**, including failed, partial, uncertain, rollback, forward and retries. Failed attempts do not advance the committed position.
 
 ## Backend/store quick start (13524044)
 
@@ -126,3 +127,14 @@ they complement a standards validator rather than replace it.
 Review K1/K2/K5 together before freeze. Subsequent changes use a PR labeled
 `contract` reviewed by all three members; bump the contract version and update
 fixtures/tests/docs together. No approval/freeze is implied by creating these files.
+
+
+### Revised attempt history
+
+- `GET /databases/{database_id}/history?page=1&limit=25&hide_rollback=true` lists attempts without SQL bodies. `id` identifies an attempt; `execution_id` identifies its logical receipt and may be shared by automatic retries. Never deduplicate attempts by execution ID.
+- `GET /databases/{database_id}/history/{history_id}` returns its immutable approved SQL snapshot. `snapshot_available=false` explicitly identifies older failures without a captured snapshot. Old data is never reconstructed from an assumed definition.
+- `GET /databases/{database_id}/history/{history_id}/statements` returns paginated driver dispatch records, including failures and SQLSTATE. Query literals and all parameters are redacted in responses. Statement success does not establish transaction commit; `started` means the result was not captured.
+- `status` remains the original attempt outcome. `resolved_status` can carry an append-only reconciliation result. Only proven commits have `committed_at` and `position_version`.
+- Hide rollback pairs **committed execution IDs** across the entire database history before pagination. It retains failures and later forwards. `/executions` and `/position` retain their committed-stack semantics for existing clients.
+- `POST /databases/{database_id}/jobs/{job_id}/retry` with JSON `{}` creates a **new pending-review CR**, requiring current group approvals. It supports failed normal apply/rollback/forward only; immutable SQL and the original target are reused. It never accepts replacement SQL. CSRF and edit permission are required; stale positions, duplicate retries and uncertain/batch sources are rejected. Batch recovery continues through resume/revert.
+- Migration `0005_attempt_history.sql` runs through the existing platform migrator. Restart server and worker together after deployment; rolling back the schema is not supported because the journal is append-only.

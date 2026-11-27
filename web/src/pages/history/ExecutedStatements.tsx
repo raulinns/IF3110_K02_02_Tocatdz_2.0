@@ -8,13 +8,14 @@ import { BoxSkeleton } from '../../components/ui/Skeleton.tsx'
 interface ExecutedStatementsProps {
   db: string
   executionId: string
+  historyId?: string
 }
 
 // SQL yang benar-benar dikirim ke database target, per batch, dengan nilainya sudah disamarkan oleh server
-export function ExecutedStatements({ db, executionId }: ExecutedStatementsProps) {
+export function ExecutedStatements({ db, executionId, historyId }: ExecutedStatementsProps) {
   const [page, setPage] = useState(1)
-  const query = useQuery(statementsQuery(db, executionId, page))
-  const heading = `statements-${executionId}`
+  const query = useQuery(statementsQuery(db, executionId, page, historyId))
+  const heading = `statements-${historyId ?? executionId}`
 
   return (
     <section aria-labelledby={heading} className="mt-3">
@@ -22,7 +23,7 @@ export function ExecutedStatements({ db, executionId }: ExecutedStatementsProps)
         SQL yang dijalankan
       </h3>
       <p className="small text-muted">
-        Bentuk akhir yang dikirim ke database. Nilai di dalamnya disamarkan sebagai [REDACTED] dan tidak pernah ditampilkan. Statement yang tidak bisa disamarkan dengan aman, misalnya karena memuat angka pada nama objek, ditampilkan sebagai [REDACTED SQL]. SQL aslinya tetap ada di salinan di atas.
+        Dispatch dan hasil statement, bukan bukti commit transaksi. Nilai sensitif disamarkan sebagai [REDACTED]; bentuk yang tidak aman ditampilkan sebagai [REDACTED SQL]. Hasil yang belum tercatat tidak dianggap berhasil.
       </p>
       {query.isPending && <BoxSkeleton rows={2} />}
       {query.isError && <ApiErrorView error={query.error} onRetry={() => void query.refetch()} />}
@@ -34,7 +35,7 @@ export function ExecutedStatements({ db, executionId }: ExecutedStatementsProps)
 interface ListProps {
   page: number
   onPage: (page: number) => void
-  items: Schemas['ExecutedStatement'][]
+  items: (Schemas['ExecutedStatement'] & { status?: 'started' | 'succeeded' | 'failed'; sqlstate?: string | null })[]
   hasNext: boolean
   stale: boolean
 }
@@ -47,6 +48,7 @@ function List({ page, onPage, items, hasNext, stale }: ListProps) {
       <ol className="statement-list list-unstyled mb-2" start={offset + 1} aria-busy={stale}>
         {items.map((statement, index) => (
           <li key={offset + index} className="mb-2">
+            {statement.status && <span className="small text-muted me-2">{({ started: 'Hasil belum tercatat', succeeded: 'Statement berhasil', failed: 'Statement gagal' })[statement.status]}{statement.sqlstate ? ` · SQLSTATE ${statement.sqlstate}` : ''}</span>}
             {statement.batch !== null && <span className="badge badge-soft me-2">Batch {statement.batch}</span>}
             <pre className="code-block mono mt-1 mb-0">{statement.query}</pre>
           </li>

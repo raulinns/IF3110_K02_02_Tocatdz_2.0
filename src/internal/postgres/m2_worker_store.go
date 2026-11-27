@@ -166,10 +166,13 @@ func (s *M2Store) ClaimJob(ctx context.Context, owner string, now time.Time, lea
 			return mapError(err)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO job_attempts (job_id, attempt, database_id, change_request_id, migration_id, migration_revision,
-				execution_id, kind, actor_id, actor, worker, lease_token, status, started_at)
+				execution_id, kind, actor_id, actor, worker, lease_token, status, started_at, definition_snapshot)
 			SELECT j.id, j.attempt, j.database_id, j.change_request_id, c.migration_id, c.migration_revision, j.execution_id, c.kind,
-				j.requested_by, u.username, $2, j.lease_token, 'running', $3
-			FROM jobs j JOIN change_requests c ON c.id = j.change_request_id JOIN users u ON u.id = j.requested_by WHERE j.id = $1`,
+				j.requested_by, u.username, $2, j.lease_token, 'running', $3,
+				jsonb_build_object('title',m.title,'up_sql',m.sql,'down_sql',m.down_sql,
+				'irreversible',m.irreversible,'irreversible_reason',m.irreversible_reason,'mode',m.mode,'batch',m.batch_config)
+				FROM jobs j JOIN change_requests c ON c.id = j.change_request_id
+				JOIN migrations m ON m.id=c.migration_id JOIN users u ON u.id = j.requested_by WHERE j.id = $1`,
 			id, owner, micro(now)); err != nil {
 			return mapError(err)
 		}
@@ -329,6 +332,9 @@ func (s *M2Store) CompleteCommitted(ctx context.Context, lease migration.JobLeas
 			string(execution.ChangeRequestID), at); err != nil {
 			return mapError(err)
 		}
+		if err := resolveAttempt(ctx, tx, lease, migration.JobSucceeded); err != nil {
+			return err
+		}
 		_, err = tx.Exec(ctx, `UPDATE job_attempts SET status = 'succeeded', finished_at = $2, statements = COALESCE(statements, $3::jsonb)
 			WHERE job_id = $1 AND finished_at IS NULL`, string(execution.JobID), at, statements)
 		return mapError(err)
@@ -374,6 +380,11 @@ func (s *M2Store) RecordOutcome(ctx context.Context, lease migration.JobLease, r
 			job.changeRequest, string(result.Status)); err != nil {
 			return mapError(err)
 		}
+		if result.Status != migration.JobUncertain {
+			if err := resolveAttempt(ctx, tx, lease, result.Status); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `UPDATE job_attempts SET status = $2, error_code = $3, error_message = $4, sqlstate = $5, retryable = $6,
 				finished_at = now() WHERE job_id = $1 AND finished_at IS NULL`,
 			string(lease.Job.ID), string(result.Status), code, message, sqlstate, retryable); err != nil {
@@ -416,6 +427,9 @@ func (s *M2Store) ScheduleRetry(ctx context.Context, lease migration.JobLease, f
 		if _, err := tx.Exec(ctx, `UPDATE change_requests SET status = 'queued', revision = revision + 1, updated_at = now()
 			WHERE id = $1 AND status IN ('running', 'uncertain')`, job.changeRequest); err != nil {
 			return mapError(err)
+		}
+		if err := resolveAttempt(ctx, tx, lease, migration.JobFailed); err != nil {
+			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE job_attempts SET status = 'failed', error_code = $2, error_message = $3, sqlstate = $4, retryable = true,
 				finished_at = now() WHERE job_id = $1 AND finished_at IS NULL`, string(lease.Job.ID), code, message, sqlstate); err != nil {
@@ -533,7 +547,11 @@ func (s *M2Store) ReadRevalidation(ctx context.Context, databaseID, jobID securi
 		if snapshot.CurrentApprovers, err = requiredApprovers(ctx, tx, databaseID); err != nil {
 			return err
 		}
-		if source := snapshot.ChangeRequest.SourceJobID; source != "" {
+		source := snapshot.ChangeRequest.SourceJobID
+		if source == "" {
+			source = snapshot.ChangeRequest.RetryOfJobID
+		}
+		if source != "" {
 			job, err := findJob(ctx, tx, databaseID, source, "")
 			if err != nil {
 				return err

@@ -5,12 +5,17 @@ import type { Schemas } from '../../api/types.ts'
 import { ApiErrorView } from '../../components/ui/ApiErrorView.tsx'
 import { BoxSkeleton } from '../../components/ui/Skeleton.tsx'
 import { SqlField } from '../../components/ui/SqlField.tsx'
+import { StatusBadge } from '../../components/ui/StatusBadge.tsx'
 import { formatDateTime } from '../../lib/format.ts'
 import { changeKindLabel } from '../../lib/labels.ts'
 import { jobPath, requestPath } from '../../lib/paths.ts'
 import { ExecutedStatements } from './ExecutedStatements.tsx'
 
 interface ExecutionRowProps {
+  attemptNumber?: number
+  historyId?: string
+  attemptStatus?: Schemas['JobStatus']
+  resolvedStatus?: Schemas['JobStatus']
   db: string
   execution: Schemas['ExecutionSummary']
   title: string | undefined
@@ -23,7 +28,7 @@ interface ExecutionRowProps {
   onJump: (id: string) => void
 }
 
-function Detail({ db, execution }: { db: string; execution: Schemas['ExecutionSummary'] }) {
+function Detail({ db, execution, historyId }: { db: string; execution: Schemas['ExecutionSummary']; historyId?: string }) {
   const query = useQuery(executionQuery(db, execution.id))
   if (query.isPending) return <BoxSkeleton rows={3} />
   if (query.isError) return <ApiErrorView error={query.error} onRetry={() => void query.refetch()} />
@@ -55,12 +60,12 @@ function Detail({ db, execution }: { db: string; execution: Schemas['ExecutionSu
         )}
       </dl>
       <SqlField label={`Salinan SQL ${detail.direction}`} value={detail.sql_snapshot} readOnly rows={5} className="mb-0" hint="SQL persis seperti yang disetujui dan dijalankan, dan tidak bisa diubah." />
-      <ExecutedStatements db={db} executionId={execution.id} />
+      <ExecutedStatements db={db} executionId={execution.id} historyId={historyId} />
     </>
   )
 }
 
-export function ExecutionRow({ db, execution, title, active, highlighted, expanded, onToggle, numberOf, onJump }: ExecutionRowProps) {
+export function ExecutionRow({ db, execution, title, active, highlighted, expanded, onToggle, numberOf, onJump, attemptNumber, historyId, attemptStatus, resolvedStatus }: ExecutionRowProps) {
   const panel = `execution-panel-${execution.id}`
   const link = (id: string, symbol: string, label: string) => {
     const number = numberOf(id)
@@ -94,6 +99,7 @@ export function ExecutionRow({ db, execution, title, active, highlighted, expand
         <td className="text-nowrap">
           <span className="badge badge-soft">{changeKindLabel(execution.operation)}</span> <span className="small text-muted">{execution.direction}</span>
         </td>
+        <td><StatusBadge status={attemptStatus ?? 'succeeded'} />{resolvedStatus && attemptStatus !== resolvedStatus && <div className="small">Hasil rekonsiliasi: <StatusBadge status={resolvedStatus} /></div>}{attemptNumber !== undefined && <div className="small text-muted">{attemptNumber === 0 ? 'Riwayat lama' : `Percobaan ${attemptNumber}`}</div>}</td>
         <td className="mono">{execution.actor}</td>
         <td>
           {execution.reverts_execution_id && link(execution.reverts_execution_id, '↩', 'membatalkan')}
@@ -109,8 +115,8 @@ export function ExecutionRow({ db, execution, title, active, highlighted, expand
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={7} id={panel} role="region" aria-label={`Detail eksekusi ${execution.position_version}`}>
-            <Detail db={db} execution={execution} />
+          <td colSpan={8} id={panel} role="region" aria-label={`Detail eksekusi ${execution.position_version}`}>
+            <Detail db={db} execution={execution} historyId={historyId} />
           </td>
         </tr>
       )}

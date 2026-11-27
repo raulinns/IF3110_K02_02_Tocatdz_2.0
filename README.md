@@ -257,6 +257,14 @@ Password tidak disimpan di repo; masing-masing anggota tim mengisinya di `.env` 
 
 ## Test
 
+Mulai pengujian **khusus Milestone 2** dari
+[panduan demo langkah demi langkah](docs/testing/milestone-2-demo.md), termasuk
+expected output dan bonus observability, k6, serta CodeQL. Payload negatif dan
+reproduksi fault yang lebih rinci tersedia pada
+[panduan verifikasi teknis](docs/testing/milestone-2-e2e.md).
+Uji revisi seluruh attempt, retry, dan Hide rollback tersedia pada
+[panduan regresi history](docs/testing/milestone-2-history-regression.md).
+
 ```
 go test ./...                 # unit + integration in-memory
 go vet ./...

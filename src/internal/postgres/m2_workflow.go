@@ -208,11 +208,11 @@ func (t *workflowTx) CreateChangeRequest(change migration.ChangeRequest) error {
 	}
 	at := micro(change.CreatedAt)
 	if _, err := t.tx.Exec(t.ctx, `INSERT INTO change_requests (id, database_id, migration_id, kind, status, revision, migration_revision,
-		checksum, target_execution_id, source_job_id, expected_position_version, requested_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'pending_review', 1, $5, $6, $7, $8, $9, $10, $11, $11)`,
+		checksum, target_execution_id, source_job_id, expected_position_version, requested_by, created_at, updated_at, retry_of_job_id)
+		VALUES ($1, $2, $3, $4, 'pending_review', 1, $5, $6, $7, $8, $9, $10, $11, $11, $12)`,
 		string(change.ID), string(change.DatabaseID), string(change.MigrationID), string(change.Kind), int64(change.MigrationRevision),
 		change.Checksum[:], nullID(change.TargetExecutionID), nullID(change.SourceJobID), int64(change.ExpectedPosition),
-		string(change.RequestedBy), at); err != nil {
+		string(change.RequestedBy), at, nullID(change.RetryOfJobID)); err != nil {
 		return mapError(err)
 	}
 	for _, approval := range change.Approvals {

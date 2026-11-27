@@ -688,7 +688,7 @@ export interface paths {
         };
         /**
          * Read append-only committed history
-         * @description Stable committed_at DESC, id DESC. Pair across ALL history by reverts_execution_id BEFORE pagination. Hide both original execution and its successful rollback, never a later forward. E1..E5 fixture hides E2/E3. Failed/partial attempts remain in jobs; no history is deleted.
+         * @description Stable committed_at DESC, id DESC. Pair across ALL history by reverts_execution_id BEFORE pagination. Hide both original execution and its successful rollback, never a later forward. E1..E5 fixture hides E2/E3. Failed/partial attempts are visible in /history and jobs; no history is deleted.
          */
         get: operations["listExecutions"];
         put?: never;
@@ -807,10 +807,164 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/databases/{database_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                database_id: components["parameters"]["database_id"];
+            };
+            cookie?: never;
+        };
+        /** Read attempt history including failures */
+        get: operations["listAttemptHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{database_id}/history/{history_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                database_id: components["parameters"]["database_id"];
+                history_id: components["parameters"]["history_id"];
+            };
+            cookie?: never;
+        };
+        /** Read attempt history including failures */
+        get: operations["getAttemptHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{database_id}/history/{history_id}/statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                database_id: components["parameters"]["database_id"];
+                history_id: components["parameters"]["history_id"];
+            };
+            cookie?: never;
+        };
+        /** Read attempt history including failures */
+        get: operations["listAttemptHistoryStatements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{database_id}/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                database_id: components["parameters"]["database_id"];
+                job_id: components["parameters"]["job_id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a fresh CR for a failed normal operation; current approvals are required again */
+        post: operations["retryFailedJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description An attempt, including failures. Status is preserved; resolved_status records proven reconciliation. Only committed results affect position. SQL snapshots are not proof of dispatch. */
+        HistoryEntry: {
+            id: components["schemas"]["ID"];
+            database_id: components["schemas"]["ID"];
+            migration_id: components["schemas"]["ID"];
+            execution_id: components["schemas"]["ID"];
+            /** Format: uuid */
+            job_id: string | null;
+            /** Format: uuid */
+            change_request_id: string | null;
+            /** Format: uuid */
+            retry_of_job_id: string | null;
+            /** Format: uuid */
+            actor_id: string | null;
+            /** Format: uuid */
+            reverts_execution_id: string | null;
+            /** Format: uuid */
+            forward_of_execution_id: string | null;
+            /** @description Empty for legacy records whose checksum is unavailable. */
+            checksum: string;
+            migration_revision: components["schemas"]["Revision"];
+            /** @description Zero denotes legacy committed history without an attempt. */
+            attempt: number;
+            operation: components["schemas"]["ChangeKind"];
+            /** @enum {string|null} */
+            direction: "up" | "down" | null;
+            status: components["schemas"]["JobStatus"];
+            resolved_status: components["schemas"]["JobStatus"];
+            actor: string;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            finished_at: string | null;
+            /** Format: date-time */
+            committed_at: string | null;
+            /** Format: int64 */
+            position_version: number | null;
+            /** @description Hint only; POST retry rechecks authorization and current state. */
+            can_retry: boolean;
+            snapshot_available: boolean;
+            error: components["schemas"]["JobFailure"] | null;
+            up_sql: string | null;
+            down_sql: string | null;
+            sql_snapshot: string | null;
+        };
+        HistoryStatement: {
+            query: string;
+            params: "[REDACTED]"[];
+            /** Format: int64 */
+            batch: number | null;
+            /** Format: int64 */
+            ordinal: number;
+            /**
+             * @description Statement result, never proof of transaction commit; started means result unavailable.
+             * @enum {string}
+             */
+            status: "started" | "succeeded" | "failed";
+            sqlstate: string | null;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            finished_at: string | null;
+        };
+        HistoryPage: {
+            items: components["schemas"]["HistoryEntry"][];
+            page: number;
+            limit: number;
+            has_next: boolean;
+        };
+        HistoryStatementsPage: {
+            items: components["schemas"]["HistoryStatement"][];
+            page: number;
+            limit: number;
+            has_next: boolean;
+        };
         /**
          * Format: uuid
          * @description Canonical lowercase, nonzero UUID; opaque identity.
@@ -1340,6 +1494,11 @@ export interface components {
          *     }
          */
         ChangeRequest: {
+            /**
+             * Format: uuid
+             * @description Source failed normal job for an approved manual retry.
+             */
+            retry_of_job_id?: string | null;
             id: components["schemas"]["ID"];
             database_id: components["schemas"]["ID"];
             migration_id: components["schemas"]["ID"];
@@ -2070,6 +2229,7 @@ export interface components {
         };
     };
     parameters: {
+        history_id: components["schemas"]["ID"];
         database_id: components["schemas"]["ID"];
         migration_id: components["schemas"]["ID"];
         change_request_id: components["schemas"]["ID"];
@@ -3800,6 +3960,154 @@ export interface operations {
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
             default: components["responses"]["Internal"];
+        };
+    };
+    listAttemptHistory: {
+        parameters: {
+            query?: {
+                /** @description Canonical positive integer; offset (page-1)*limit <= 1000000. */
+                page?: components["parameters"]["page"];
+                limit?: components["parameters"]["limit"];
+                hide_rollback?: boolean;
+            };
+            header?: never;
+            path: {
+                database_id: components["parameters"]["database_id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestID"];
+                    "Cache-Control": components["headers"]["NoStore"];
+                    "Set-Cookie": components["headers"]["SessionCookie"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getAttemptHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                database_id: components["parameters"]["database_id"];
+                history_id: components["parameters"]["history_id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestID"];
+                    "Cache-Control": components["headers"]["NoStore"];
+                    "Set-Cookie": components["headers"]["SessionCookie"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryEntry"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listAttemptHistoryStatements: {
+        parameters: {
+            query?: {
+                /** @description Canonical positive integer; offset (page-1)*limit <= 1000000. */
+                page?: components["parameters"]["page"];
+                limit?: components["parameters"]["limit"];
+            };
+            header?: never;
+            path: {
+                database_id: components["parameters"]["database_id"];
+                history_id: components["parameters"]["history_id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestID"];
+                    "Cache-Control": components["headers"]["NoStore"];
+                    "Set-Cookie": components["headers"]["SessionCookie"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryStatementsPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    retryFailedJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Required for authenticated unsafe methods; get from /auth/me. */
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                database_id: components["parameters"]["database_id"];
+                job_id: components["parameters"]["job_id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description New pending review request */
+            201: {
+                headers: {
+                    "X-Request-ID": components["headers"]["RequestID"];
+                    "Cache-Control": components["headers"]["NoStore"];
+                    "Set-Cookie": components["headers"]["SessionCookie"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeRequest"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
         };
     };
 }

@@ -200,4 +200,25 @@ func TestWorkflowHistoryFiltersBeforePaginationWithPostgreSQL(t *testing.T) {
 		!strings.Contains(statements, `"params":["[REDACTED]"]`) || strings.Contains(statements, "private") {
 		t.Fatal("statement projection did not redact literals and parameters")
 	}
+	// Existing committed history without job_attempts remains visible after upgrade.
+	historyBase := Prefix + "/databases/" + string(testDatabase) + "/history"
+	var attempts struct {
+		Items   []historyResponse `json:"items"`
+		HasNext bool              `json:"has_next"`
+	}
+	response := send("GET", historyBase+"?hide_rollback=true&limit=2", "", 200)
+	if err := json.Unmarshal(response.Body.Bytes(), &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts.Items) != 2 || attempts.Items[0].Status != migration.JobSucceeded || attempts.Items[0].ExecutionID != historyID(5) || attempts.Items[1].ExecutionID != historyID(4) || !attempts.HasNext {
+		t.Fatal("legacy committed history disappeared")
+	}
+	detail := send("GET", historyBase+"/"+string(historyID(3)), "", 200).Body.String()
+	if !strings.Contains(detail, `"sql_snapshot":"SELECT 2"`) || !strings.Contains(detail, `"attempt":0`) {
+		t.Fatal("legacy immutable snapshot unavailable")
+	}
+	legacyStatements := send("GET", historyBase+"/"+string(historyID(3))+"/statements", "", 200).Body.String()
+	if strings.Contains(legacyStatements, "private") || !strings.Contains(legacyStatements, `"status":"succeeded"`) {
+		t.Fatal("legacy statement fallback did not preserve redaction")
+	}
 }

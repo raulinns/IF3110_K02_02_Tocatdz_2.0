@@ -71,7 +71,12 @@ func newWorkerFixture(t *testing.T) *workerFixture {
 	exec(t, env.platform, "UPDATE groups SET leader_user_id = $2 WHERE id = $1", string(group), string(leader))
 	exec(t, env.platform, "INSERT INTO group_database_grants (group_id, database_id, access) VALUES ($1, $2, 'view_edit')", string(group), string(env.database))
 	request := func(user security.ID) migration.Request {
-		return migration.Request{Principal: security.Principal{UserID: user, SessionID: liveSession(t, env.platform, user), AuthVersion: 1, CSRFEpoch: 1},
+		session := liveSession(t, env.platform, user)
+		// Session validation uses the Go clock. A Docker database clock can be
+		// slightly ahead, so create the fixture session in the recent past.
+		exec(t, env.platform, `UPDATE sessions SET created_at=$2::timestamptz,last_seen_at=$2::timestamptz,rotated_at=$2::timestamptz,
+		 absolute_expires_at=$2::timestamptz+interval '1 hour' WHERE id=$1`, string(session), time.Now().UTC().Add(-time.Minute))
+		return migration.Request{Principal: security.Principal{UserID: user, SessionID: session, AuthVersion: 1, CSRFEpoch: 1},
 			DatabaseID: env.database}
 	}
 	f := &workerFixture{targetFixtureEnv: env, store: store, requester: request(requester), leader: request(leader), group: group}
@@ -332,6 +337,16 @@ func TestM2WorkerRecoveryRequeuesJobThatNeverStarted(t *testing.T) {
 	must(t, err)
 	if len(attempts.Items) != 2 || attempts.Items[0].Status != migration.JobFailed || attempts.Items[1].Status != migration.JobSucceeded {
 		t.Fatalf("attempts = %+v", attempts.Items)
+	}
+	history, err := f.store.ListHistory(ctx, f.database, migration.ExecutionQuery{})
+	must(t, err)
+	if len(history.Items) != 2 || history.Items[0].ID == history.Items[1].ID {
+		t.Fatal("automatic retry must retain two distinct history identities")
+	}
+	for _, entry := range history.Items {
+		if entry.Status == migration.JobFailed && entry.CommittedAt != nil {
+			t.Fatal("a later receipt must not turn an earlier failed attempt into a commit")
+		}
 	}
 }
 

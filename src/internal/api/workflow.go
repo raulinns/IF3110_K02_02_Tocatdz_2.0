@@ -40,6 +40,10 @@ func WorkflowRoutes(service *migration.WorkflowService) ([]Route, error) {
 		{Method: http.MethodGet, Path: workflowExecutions, QueryParameters: []string{"page", "limit", "hide_rollback"}, Handle: h.executions},
 		{Method: http.MethodGet, Path: workflowExecutions + "/{execution_id}", Handle: h.execution},
 		{Method: http.MethodGet, Path: workflowExecutions + "/{execution_id}/statements", QueryParameters: []string{"page", "limit"}, Handle: h.statements},
+		{Method: http.MethodGet, Path: "/databases/{database_id}/history", QueryParameters: []string{"page", "limit", "hide_rollback"}, Handle: h.history},
+		{Method: http.MethodGet, Path: "/databases/{database_id}/history/{history_id}", Handle: h.historyEntry},
+		{Method: http.MethodGet, Path: "/databases/{database_id}/history/{history_id}/statements", QueryParameters: []string{"page", "limit"}, Handle: h.historyStatements},
+		{Method: http.MethodPost, Path: "/databases/{database_id}/jobs/{job_id}/retry", Body: JSONBody, Handle: h.retryJob},
 		{Method: http.MethodGet, Path: "/databases/{database_id}/position", Handle: h.position},
 	}, nil
 }

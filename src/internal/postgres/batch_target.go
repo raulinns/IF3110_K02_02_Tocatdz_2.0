@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/migration"
+	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/observability/logging"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/security"
 	"github.com/raulinns/IF3110_K02_02_Tocatdz_2.0/internal/targetbatch"
 )
@@ -210,13 +213,30 @@ func (l *lockedTarget) BeginBatch(ctx context.Context) (targetbatch.Tx, error) {
 	return tx.(*targetTx), nil
 }
 
-func (t *targetTx) UpdateKeys(ctx context.Context, sql string, args ...any) ([]int64, error) {
+func (t *targetTx) UpdateKeys(ctx context.Context, sql string, args ...any) (keys []int64, resultErr error) {
+	params := make([]security.Secret, len(args))
+	for i, value := range args {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, security.ErrInvalidInput
+		}
+		params[i] = security.NewSecret(string(encoded))
+	}
+	batch := logging.OperationFromContext(ctx).Batch
+	finish, err := migration.StartAttemptStatement(ctx, migration.ExecutedStatement{Query: security.NewSecret(sql), Params: params, Batch: &batch})
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := finish(resultErr); err != nil {
+			resultErr = err
+		}
+	}()
 	rows, err := t.tx.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, statementFailure(err)
 	}
 	defer rows.Close()
-	var keys []int64
 	for rows.Next() {
 		var key int64
 		if err := rows.Scan(&key); err != nil {

@@ -133,6 +133,7 @@ type workflowChangeResponse struct {
 	RequestedBy       security.ID               `json:"requested_by"`
 	TargetExecutionID *security.ID              `json:"target_execution_id"`
 	SourceJobID       *security.ID              `json:"source_job_id"`
+	RetryOfJobID      *security.ID              `json:"retry_of_job_id,omitempty"`
 	ExpectedPosition  migration.PositionVersion `json:"expected_position_version"`
 	Approvals         []workflowApproval        `json:"approvals"`
 	CreatedAt         time.Time                 `json:"created_at"`
@@ -154,7 +155,7 @@ func changeResponse(change migration.ChangeRequest) workflowChangeResponse {
 		ID: change.ID, DatabaseID: change.DatabaseID, MigrationID: change.MigrationID,
 		MigrationRevision: change.MigrationRevision, Checksum: hex.EncodeToString(change.Checksum[:]), Revision: change.Revision,
 		Kind: change.Kind, Status: change.Status, RequestedBy: change.RequestedBy, TargetExecutionID: optionalValue(change.TargetExecutionID),
-		SourceJobID: optionalValue(change.SourceJobID), ExpectedPosition: change.ExpectedPosition,
+		SourceJobID: optionalValue(change.SourceJobID), RetryOfJobID: optionalValue(change.RetryOfJobID), ExpectedPosition: change.ExpectedPosition,
 		Approvals: approvals, CreatedAt: change.CreatedAt.UTC(), UpdatedAt: change.UpdatedAt.UTC(),
 	}
 }

@@ -10,6 +10,11 @@ func validSubmissionState(kind ChangeKind, definition MigrationDefinition) bool 
 }
 
 func checkSubmissionPosition(tx WorkflowTx, position Position, change ChangeRequest, definition MigrationDefinition) error {
+	if change.RetryOfJobID != "" {
+		if err := checkRetrySubmission(tx, change, definition); err != nil {
+			return err
+		}
+	}
 	if change.Kind == ChangeResume || change.Kind == ChangeRevertBatches {
 		return checkRecoverySubmission(tx, position, change, definition)
 	}

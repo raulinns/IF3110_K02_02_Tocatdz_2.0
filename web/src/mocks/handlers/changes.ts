@@ -27,7 +27,7 @@ const touch = (request: MockChangeRequest, status: Schemas['CRStatus']) => {
 }
 
 // Approver adalah leader setiap group yang punya akses ke database dan group tanpa leader aktif menggagalkan pengajuan
-function snapshotApprovals(databaseId: string): Schemas['Approval'][] {
+export function snapshotApprovals(databaseId: string): Schemas['Approval'][] {
   const state = getState()
   const approvals = state.grants
     .filter((grant) => grant.database_id === databaseId)
@@ -84,6 +84,29 @@ function checkSubmission(connection: MockConnection, { migration, kind, target, 
 }
 
 export const changeHandlers = [
+  http.post(route('/databases/:database_id/jobs/:job_id/retry'), secured(async (ctx) => {
+    const connection = authorizedConnection(ctx, 'edit')
+    requireWorkflow(connection)
+    await readJson(ctx.request, [])
+    const state = getState()
+    const source = state.jobs.find((job) => job.id === ctx.params.job_id && job.database_id === connection.id)
+    if (!source) throw notFound()
+    if (source.status !== 'failed' || source.mode !== 'normal' || !['apply', 'rollback', 'forward'].includes(source.kind)) throw conflict('Job tidak dapat dijalankan ulang')
+    const original = state.changeRequests.find((request) => request.id === source.change_request_id)!
+    if (state.changeRequests.some((request) => request.retry_of_job_id === source.id && request.status !== 'rejected')) throw conflict('Pengajuan ulang sudah dibuat')
+    if (state.changeRequests.some((request) => request.database_id === connection.id && openStatuses.has(request.status))) throw conflict('Masih ada permintaan yang berjalan')
+    const position = computePosition(connection.id)
+    if (blockingJob(connection.id)) throw conflict('Database masih ditahan')
+    if (source.kind === 'apply' && walkHistory(databaseExecutions(connection.id)).redo.length > 0) throw conflict('Forward harus diselesaikan dahulu')
+    if (source.kind === 'rollback' && position.rollback_execution_id !== original.target_execution_id) throw conflict('Posisi sudah berubah')
+    if (source.kind === 'forward' && position.forward_execution_id !== original.target_execution_id) throw conflict('Posisi sudah berubah')
+    const stamp = now()
+    const request: MockChangeRequest = {...original, id: crypto.randomUUID(), retry_of_job_id: source.id, revision: 1,
+      status: 'pending_review', requested_by: ctx.user.id, expected_position_version: position.version,
+      approvals: snapshotApprovals(connection.id), created_at: stamp, updated_at: stamp}
+    state.changeRequests.push(request)
+    return ok(request, 201, {Location: `${apiPrefix}/databases/${connection.id}/change-requests/${request.id}`})
+  })),
   http.get(
     route('/databases/:database_id/change-requests'),
     secured((ctx) => {
