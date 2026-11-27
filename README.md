@@ -453,7 +453,7 @@ go test -race ./...           # butuh toolchain dengan cgo
 
 Integration test PostgreSQL berjalan bila `TEST_DATABASE_URL` diset ke server khusus test, contoh:
 ```
-TEST_DATABASE_URL=postgres://app:app@localhost:5433/postgres?sslmode=disable go test ./...
+TEST_DATABASE_URL=postgres://app:app@127.0.0.1:5433/postgres?sslmode=disable go test ./...
 ```
 Setiap test membuat database `tocatdz_test_*`/`tocatdz_e2e_*` sendiri lalu menghapusnya. Jangan arahkan ke database yang berisi data penting. Tanpa `TEST_DATABASE_URL`, test tersebut otomatis dilewati.
 
