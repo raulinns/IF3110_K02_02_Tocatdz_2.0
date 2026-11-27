@@ -206,6 +206,13 @@ func (s *AuthService) Login(ctx context.Context, input Credentials, previousCook
 	return result, nil
 }
 
+// lastSeenWriteInterval membatasi seberapa sering last_seen ditulis; jauh di bawah IdleTimeout.
+const lastSeenWriteInterval = 30 * time.Second
+
+// clockSkewTolerance menerima sesi yang tercatat sedikit lebih baru dari jam proses ini, misalnya
+// karena jam server dan database berbeda beberapa detik.
+const clockSkewTolerance = 2 * time.Second
+
 func validSession(snapshot SessionSnapshot, now time.Time, policy SessionPolicy) bool {
 	session, account := snapshot.Session, snapshot.Account
 	if !ValidID(session.ID) || !ValidID(session.UserID) || account.ID != session.UserID || !account.Active ||
@@ -213,8 +220,8 @@ func validSession(snapshot SessionSnapshot, now time.Time, policy SessionPolicy)
 		session.Generation == 0 || session.CSRFEpoch == 0 || session.RevokedAt != nil || session.CurrentTokenSealed.Empty() {
 		return false
 	}
-	if session.CreatedAt.IsZero() || session.CreatedAt.After(now) || session.LastSeenAt.Before(session.CreatedAt) ||
-		session.RotatedAt.Before(session.CreatedAt) || session.RotatedAt.After(now) ||
+	if session.CreatedAt.IsZero() || session.CreatedAt.After(now.Add(clockSkewTolerance)) || session.LastSeenAt.Before(session.CreatedAt) ||
+		session.RotatedAt.Before(session.CreatedAt) || session.RotatedAt.After(now.Add(clockSkewTolerance)) ||
 		!session.AbsoluteExpiresAt.After(session.CreatedAt) || session.AbsoluteExpiresAt.After(session.CreatedAt.Add(policy.AbsoluteLifetime)) ||
 		!now.Before(session.LastSeenAt.Add(policy.IdleTimeout)) || !now.Before(session.AbsoluteExpiresAt) {
 		return false
@@ -291,7 +298,8 @@ func (s *AuthService) Authenticate(ctx context.Context, cookie Secret, check Ses
 			}
 		}
 		var token Secret
-		if elevated || !previous && !now.Before(replacement.RotatedAt.Add(s.deps.Policy.RotationInterval)) {
+		rotate := elevated || !previous && !now.Before(replacement.RotatedAt.Add(s.deps.Policy.RotationInterval))
+		if rotate {
 			if replacement.Generation == ^uint64(0) {
 				return SessionResult{}, ErrUnauthenticated
 			}
@@ -328,6 +336,10 @@ func (s *AuthService) Authenticate(ctx context.Context, cookie Secret, check Ses
 		result, err := s.result(ctx, replacement, snapshot.Account, token)
 		if err != nil {
 			return SessionResult{}, err
+		}
+		// Tanpa rotasi dan dengan last_seen yang masih baru, sesi tidak ditulis agar request paralel tidak berebut baris yang sama.
+		if !rotate && now.Sub(snapshot.Session.LastSeenAt) < lastSeenWriteInterval {
+			return result, nil
 		}
 		// Saat konflik, baca ulang token awal agar rotasi atau logout dari request lain tetap dihormati.
 		err = s.deps.Sessions.Advance(ctx, digest, replacement, snapshot.Session.Revision, snapshot.Account.AuthVersion, s.deps.Policy)
