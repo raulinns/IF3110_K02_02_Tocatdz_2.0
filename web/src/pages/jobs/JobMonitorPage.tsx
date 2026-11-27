@@ -114,7 +114,8 @@ export function JobMonitorPage() {
         {outcomes[job.status]} {polling ? 'Diperbarui otomatis.' : 'Pembaruan otomatis berhenti.'}
       </p>
       {blocking && !recoverable && <Notice kind="warning">Job ini sedang menahan database sehingga perubahan baru belum bisa diajukan sampai hasilnya jelas.</Notice>}
-      {job.error && (
+      {/* Server masih membawa galat attempt yang gagal pada job yang akhirnya sukses, dan riwayat kegagalannya sudah ada di tabel percobaan */}
+      {job.error && job.status !== 'succeeded' && (
         <Notice kind="error">
           <JobFailureText error={job.error} />
         </Notice>
