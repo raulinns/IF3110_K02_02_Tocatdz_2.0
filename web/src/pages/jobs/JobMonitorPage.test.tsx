@@ -173,6 +173,15 @@ describe('monitor job', () => {
     expect(screen.getByRole('button', { name: 'Resume' })).toBeEnabled()
   })
 
+  it('job yang akhirnya sukses tidak menampilkan galat attempt sebelumnya sebagai galat job', async () => {
+    const { job } = seedJob()
+    jobOf(job.id).error = { code: 'sql_error', message: 'transient database conflict', sqlstate: '40001', retryable: true }
+    openAs('reviewer', monitor(job.id))
+    await waitFor(() => expect(finalStep()).toHaveTextContent('Berhasil'), { timeout: 8000 })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(/transient database conflict/)).not.toBeInTheDocument()
+  })
+
   it('job sebagian yang sudah dipulihkan tidak lagi menawarkan pemulihan karena database tidak ditahan olehnya', async () => {
     const migration = seedBatchMigration("status = 'arsip' -- mock:partial")
     const { job } = seedJob(migration)

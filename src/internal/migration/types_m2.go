@@ -53,7 +53,7 @@ type DefinitionInput struct {
 }
 
 // DefinitionChecksum is SHA-256, encoded as 64 lowercase hex characters in K1.
-// Canonical input and versioning are specified in docs/contracts/m2.md.
+// Canonical input and versioning are defined by the types and constructors below.
 type DefinitionChecksum [32]byte
 
 type MigrationDefinition struct {

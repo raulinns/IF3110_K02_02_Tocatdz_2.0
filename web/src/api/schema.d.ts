@@ -796,7 +796,7 @@ export interface paths {
         };
         /**
          * Prometheus metrics (optional bonus)
-         * @description Mounted at /metrics outside /api/v1, only on internal network. Bonus owned by 13524044. Bounded labels; no user/job IDs or SQL.
+         * @description Mounted at /metrics outside /api/v1, only on internal network. Bounded labels; no user/job IDs or SQL.
          */
         get: operations["metrics"];
         put?: never;

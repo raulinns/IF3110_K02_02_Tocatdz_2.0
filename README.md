@@ -1,8 +1,10 @@
 # IF3110_K02_02_Tocatdz_2.0
 
-Tugas Besar Milestone 1 IF3110 Pengembangan Aplikasi Web: Database Management Platform berbasis Go. PostgreSQL digunakan sebagai database metadata platform, sedangkan database target dapat menggunakan PostgreSQL atau MySQL.
+Tugas Besar IF3110 Pengembangan Aplikasi Web: Database Management Platform berbasis Go dengan antarmuka SPA. PostgreSQL digunakan sebagai database metadata platform, sedangkan database target dapat menggunakan PostgreSQL atau MySQL.
 
-Alur yang didukung: login → akses lewat group → pilih database → lihat schema/table/data → buat migration → jalankan (commit/rollback) → riwayat migration. Platform admin mengelola user, group, koneksi database, dan akses.
+Alur yang didukung: login → akses lewat group → pilih database → lihat schema/table/data → buat migration (SQL up dan down, atau irreversible dengan alasan) → ajukan → disetujui leader setiap group yang berhak → antrean dan worker menjalankan job (mode normal atau per batch) → pantau status → riwayat, rollback, dan forward. Platform admin mengelola user, group, koneksi database, dan akses.
+
+Komponen: `src/cmd/server` (API dan SPA), `src/cmd/worker` (antrean job), `web/` (SPA React), dan `loadtest/k6/` (stress test).
 
 Bonus yang dikerjakan: **dukungan DBMS tambahan MySQL**, **schema diff dan migration generation**, serta **query execution plan analysis**. Schema diff dan query execution plan saat ini khusus untuk database target PostgreSQL.
 
@@ -153,11 +155,197 @@ Database dan akun MySQL disiapkan terlebih dahulu di luar aplikasi. Akun tersebu
 
 Skema database platform diterapkan otomatis saat server atau seed berjalan (`src/internal/postgres/schema/*.sql`).
 
-## Observability dan stress test
+## Worker, queue, lock, dan pemulihan
 
-Metrik Prometheus, dashboard Grafana, dan Collector dijalankan dengan
-`docker compose --profile observability up -d --build`; penjelasan metrik dan contoh hasilnya ada di
-[docs/observability/metrics.md](docs/observability/metrics.md).
+Setiap job dijalankan **paling banyak satu kali secara efektif**: antrean boleh mengirim ulang job (*at-least-once*),
+tetapi receipt di database target menjamin commit tidak terjadi dua kali.
+
+```text
+API execute (202) ── satu transaksi: INSERT jobs + CR approved → queued
+        │
+worker ClaimJob ── SELECT … FOR UPDATE SKIP LOCKED, attempt+1, lease_token+1, catat job_attempts
+        │
+WithDatabaseLock ── pg_advisory_lock (session-level) di database target
+        │
+Revalidator ── gagal → job failed (revalidation_failed), tanpa SQL ke target
+        │
+StartRunning ── CAS ulang CR/approval/definisi/posisi di bawah guard, simpan execution_plan
+        │
+Runner ── satu transaksi target: SQL migration + receipt, lalu COMMIT
+        │
+CompleteCommitted ── satu transaksi platform: executions + posisi + job/CR/attempt
+```
+
+| Aturan | Mekanisme |
+|---|---|
+| Satu database menjalankan satu migration | Claim melewati database yang punya job `running`/`uncertain`. Advisory lock di target menjadi pengaman lintas proses dan alias koneksi. |
+| Database berbeda diproses paralel | `WORKER_CONCURRENCY` loop per proses, dan beberapa proses `cmd/worker` boleh berjalan bersamaan. `SKIP LOCKED` membuat worker tidak saling menunggu. |
+| Lock berlaku lintas worker dan di antara commit batch | Lock bersifat session-level pada satu koneksi khusus dan tidak lepas saat transaksi batch di-commit. |
+| Pesan duplikat tidak menyebabkan double commit | `UNIQUE(change_request_id)` pada `jobs`, lease token yang memagari worker lama, dan receipt per `execution_id` yang diperiksa sebelum SQL dijalankan. |
+
+**Retry otomatis.** Hanya untuk kegagalan sementara: SQLSTATE `40001`, `40P01`, `55P03`, kelas `08`, serta `57P01`–`57P03`, atau target tidak bisa dihubungi
+sebelum ada SQL yang dikirim. Jumlah attempt dibatasi `max_attempts`, dengan backoff eksponensial (2 detik, 4 detik, … maksimum 1 menit) dan jitter.
+Setiap attempt, termasuk yang gagal, tercatat di `job_attempts`. Error SQL permanen (misalnya `42P01`) langsung menjadi `failed`: transaksi di-rollback,
+attempt gagal tetap muncul di Riwayat tanpa commit baru, dan posisi aktif tetap.
+
+**Pemulihan lock ketika worker gagal.**
+1. Worker mati saat memegang lock: koneksi ke target terputus dan PostgreSQL otomatis melepas advisory lock session-level milik koneksi itu. Lock tidak pernah tertinggal.
+2. Transaksi yang belum di-commit ikut di-rollback oleh PostgreSQL ketika koneksi putus.
+3. Lease job kedaluwarsa karena heartbeat berhenti. Loop rekonsiliasi mengklaim ulang job dengan menaikkan `lease_token`, sehingga worker lama tidak bisa lagi mencatat hasil.
+4. Rekonsiliasi **tidak menjalankan SQL**. Ia hanya membaca bukti di target di bawah lock: belum ada `execution_plan` → job dijadwalkan ulang; receipt cocok → commit terbukti dan
+   dicatat; tidak ada receipt dan target tenang → retry atau `failed`; bukti tidak bisa dipastikan → `uncertain` dan database ditahan (barrier) sampai terbukti.
+5. Jika commit target berhasil tetapi pencatatan di platform gagal, job tetap `running` sampai lease habis, lalu langkah 4 menyelesaikannya dari receipt. Commit kedua tidak mungkin terjadi.
+
+**Menjalankan worker.** `cd src && go run ./cmd/worker` memakai `.env` yang sama dengan server. Variabel khusus: `WORKER_ID` (bawaan `hostname-pid`) dan `WORKER_CONCURRENCY`
+(bawaan 2, rentang 1–64). Untuk pengembangan, worker bisa berjalan di dalam proses server dengan `EMBEDDED_WORKER=true`. Worker menolak start jika revalidator tidak tersedia.
+
+### Riwayat seluruh attempt
+
+Riwayat mencatat semua attempt, termasuk gagal, partial, uncertain, retry, rollback, dan forward.
+Setiap attempt mempunyai ID history sendiri; retry otomatis dapat memakai execution ID yang sama.
+SQL yang dikirim ke driver dicatat sebelum dispatch, lalu hasil statement disimpan terpisah agar tetap tersedia
+ketika transaksi target dibatalkan. Statement berhasil bukan bukti commit transaksi; hasil yang belum tercatat
+ditampilkan sebagai belum diketahui. Snapshot SQL dan attempt yang telah selesai tidak ditimpa.
+
+Hide rollback menyembunyikan pasangan eksekusi committed dan rollback sukses berdasarkan execution ID,
+sebelum pagination. Kegagalan dan forward berikutnya tetap terlihat. Status attempt awal tetap tersimpan
+ketika rekonsiliasi menambahkan hasil yang sudah terbukti. Data lama tanpa snapshot ditandai tidak tersedia.
+
+Kontrak lengkap tersedia di [OpenAPI](api/openapi.yaml). Endpoint berikut memakai prefix `/api/v1`:
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /databases/{database_id}/history` | Daftar seluruh attempt; mendukung `page`, `limit`, dan `hide_rollback`, tanpa badan SQL. |
+| `GET /databases/{database_id}/history/{history_id}` | Detail dan snapshot SQL immutable untuk pengguna dengan grant database. |
+| `GET /databases/{database_id}/history/{history_id}/statements` | Statement per halaman, hasil, dan SQLSTATE; literal serta parameter sensitif disamarkan. |
+| `POST /databases/{database_id}/jobs/{job_id}/retry` | JSON `{}` membuat CR baru untuk job normal gagal yang dapat diulang, dengan approval seluruh group kembali. Memerlukan grant ubah dan CSRF. |
+
+Retry manual memakai SQL asli dan target yang sama; perubahan posisi, permission, checksum, source yang belum pasti,
+dan pengajuan ganda diperiksa ulang. Jika SQL perlu diubah, buat migration baru. Pemulihan batch tetap melalui Resume/Revert.
+`/executions` dan `/position` tetap memakai bukti commit untuk menentukan posisi linear; attempt gagal tidak menjadi posisi baru.
+Schema `0005_attempt_history.sql` diterapkan migrator platform. Build ulang lalu restart server dan worker bersama saat menerapkan versi ini.
+
+### Mode batch
+
+Konfigurasi batch: `schema`, `table`, `key_column` (integer, unik, NOT NULL, tidak boleh diubah oleh SET), dan `batch_size` (100–100.000). `up_sql` dan `down_sql` hanya berisi bagian `SET`.
+Predikat `scope_where` yang tidak kosong ditolak karena predikat bebas harus melewati allowlist lebih dulu.
+
+```sql
+-- per batch, satu transaksi target:
+UPDATE t SET <up> WHERE key IN (
+  SELECT key FROM t WHERE ($1 IS NULL OR key > $1) AND key <= $scope_max ORDER BY key LIMIT $batch_size
+) RETURNING key;
+SELECT tocatdz_internal.write_checkpoint(...);  -- key persis, cursor, scope, bukti HMAC
+COMMIT;
+```
+
+- **Cakupan tetap.** `scope_max` diambil sekali sebelum batch pertama dan disimpan di setiap checkpoint. Row yang ditambahkan setelahnya tidak ikut terproses.
+- **Tanpa memuat dataset.** Yang ada di memori hanya key dari satu batch.
+- **Checkpoint di transaksi yang sama.** Checkpoint ada jika dan hanya jika batch-nya ter-commit. Tabel checkpoint dimiliki role NOLOGIN dan role runtime hanya bisa menulis lewat fungsi yang
+  memverifikasi HMAC, sehingga SQL migration tidak bisa memalsukan atau menghapusnya.
+- **Batch gagal.** Hanya batch itu yang di-rollback. Batch sebelumnya tetap committed, status menjadi `partial`, dan database ditahan sampai ada permintaan `resume` atau `revert_batches` yang disetujui.
+- **Resume** memakai identitas receipt yang sama lalu lanjut dari cursor checkpoint terakhir tanpa mengulang batch.
+- **Revert dan rollback** menjalankan `down` pada key yang tersimpan (bukan predikat hari ini) dengan urutan batch terbalik. Setiap batch yang dibatalkan juga punya checkpoint,
+  sehingga revert yang terhenti bisa dilanjutkan (`partially_reverted`).
+- **Progres di SPA** berasal dari `jobs.batches_committed`, `rows_committed`, dan tabel `job_batches`, yang mencerminkan checkpoint target.
+
+Target yang disiapkan sebelum fitur batch perlu ditambah dukungannya sekali dengan `postgres.UpgradeManagedTargetBatch` (memakai DSN admin target). Target baru mendapatkannya otomatis dari `target-init`.
+
+**Dataset besar.** `cd src && TARGET_ADMIN_DATABASE_URL=postgres://… go run ./cmd/seed-large`, lalu `psql "$TARGET_ADMIN_DATABASE_URL" -f scripts/bench-update.sql`. `seed-large` menggandakan row
+`public.orders` sampai UPDATE seluruh row tanpa batching melewati 1 detik; data tidak berubah karena benchmark di-rollback.
+
+| Pengukuran (PostgreSQL 17 di Docker, laptop 16 thread) | Row | Durasi |
+|---|---:|---:|
+| `seed-large`: UPDATE `orders` tanpa batching | 250.000 | 760 ms |
+| `seed-large`: UPDATE `orders` tanpa batching | **500.000** | **1.662 ms** (> 1 detik) |
+| Dataset yang sama di test (`items`), UPDATE tanpa batching | 500.000 | 3.081 ms |
+| Job batch pada dataset yang sama, `batch_size` 10.000 | 500.000 (50 batch) | 12.887 ms |
+
+Total waktu job batch lebih lama karena setiap batch melakukan commit dan menulis checkpoint. Sebagai gantinya setiap transaksi hanya mengunci 10.000 row, progres terlihat per batch, dan kegagalan hanya
+membatalkan satu batch. Ulangi dengan `TEST_DATABASE_URL=… TEST_LARGE_BATCH_ROWS=500000 go test ./internal/postgres -run TestM2BatchLargeDatasetBenchmark -v`.
+
+## Observability
+
+Metrik Prometheus, dashboard Grafana, dan OpenTelemetry Collector dijalankan dengan:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 docker compose --profile observability up -d --build
+```
+
+| Layanan | Alamat | Fungsi |
+|---|---|---|
+| Grafana | http://localhost:3000 | Dashboard "Tocatdz: Queue, Migration, dan Koneksi" (anonim hanya melihat, admin: `admin`/`admin`) |
+| Prometheus | http://localhost:9090 | Mengambil `/metrics` dari server dan worker setiap 5 detik |
+| OTel Collector | `:4317` (gRPC), `:4318` (HTTP) | Menerima OTLP, log diteruskan ke Loki dan trace ke Tempo |
+| Loki, Tempo | internal | Penyimpanan log dan trace |
+
+Tanpa Docker, jalankan server atau worker dengan `METRICS_ADDR=:9100` lalu buka `http://localhost:9100/metrics`. Listener metrik sengaja terpisah dari API publik; kosongkan `METRICS_ADDR` untuk mematikannya.
+
+### Metrik
+
+Label terbatas pada `status`, `kind`, `mode`, `direction`, dan `pool`. ID user, ID job, dan SQL tidak pernah menjadi label.
+
+| Metrik | Tipe | Arti |
+|---|---|---|
+| `tocatdz_jobs{status}` | gauge | Jumlah job per status |
+| `tocatdz_jobs_finished_total{status,kind,mode}` | counter | Job yang selesai diproses |
+| `tocatdz_job_retries_total{kind}` | counter | Retry yang dijadwalkan |
+| `tocatdz_queue_wait_seconds` | histogram | Waktu job siap dijalankan sampai diambil worker |
+| `tocatdz_lock_wait_seconds` | histogram | Waktu menunggu lock database target |
+| `tocatdz_migration_duration_seconds{mode,kind}` | histogram | Durasi eksekusi di target |
+| `tocatdz_batches_processed_total{direction}` | counter | Batch ter-commit (`up`) atau dibatalkan (`down`) |
+| `tocatdz_rows_processed_total{direction}` | counter | Row pada batch tersebut |
+| `tocatdz_db_pool_connections{pool,state}` | gauge | Koneksi `active` dan `idle`; pool `platform` dan `target` |
+| `tocatdz_db_pool_acquire_wait_seconds_total{pool}` | counter | Total waktu menunggu koneksi |
+| `tocatdz_db_pool_acquires_total{pool}` | counter | Jumlah pengambilan koneksi |
+
+Waktu tunggu koneksi rata-rata adalah `rate(..._wait_seconds_total) / rate(..._acquires_total)`. Metrik worker hanya terisi pada proses yang menjalankan worker, sedangkan gauge `tocatdz_jobs`
+dan metrik pool diekspos oleh server maupun worker, sehingga dashboard memakai `max by (status)` agar tidak menghitung ganda. Dashboard (`deploy/grafana/dashboards/tocatdz.json`, 20 panel) dimuat otomatis
+lewat `deploy/grafana/provisioning/`.
+
+Contoh hasil pada delapan job (lima normal, satu batch 300.003 row dengan `batch_size` 10.000, tiga gagal) di dua database yang diproses bersamaan: `max by (status) (tocatdz_jobs)` = succeeded 5 dan failed 3;
+`sum by (direction) (tocatdz_rows_processed_total)` = up 300.003; `sum(tocatdz_queue_wait_seconds_count)` = 8; rata-rata durasi mode batch 4,15 detik; pool `platform` aktif 1 dan idle 3.
+
+### Skema log dan trace
+
+Server dan worker menulis satu objek JSON UTF-8 per baris ke stdout (Go `slog`), dan span OpenTelemetry (propagasi W3C TraceContext) selalu dicetak ke stdout. Exporter OTLP/HTTP aktif bila
+`OTEL_EXPORTER_OTLP_ENDPOINT` diisi. Tidak ada tabel log di database platform.
+
+| Field | Arti |
+|---|---|
+| `time`, `level`, `msg`, `event` | Waktu RFC 3339 UTC, level, pesan aman, dan nama event dari katalog |
+| `actor` | UUID user, `worker:<id>`, `anonymous`, atau `system` |
+| `database_id`, `migration_id`, `change_request_id`, `job_id`, `execution_id` | UUID terkait atau `null` |
+| `migration_revision`, `direction`, `attempt`, `batch` | Revisi yang direview, `up`/`down`, attempt dan batch berbasis satu, atau `null` |
+| `status` | `start`, `succeeded`, `failed`, `queued`, `running`, `partial`, `uncertain`, `committed`, `rolled_back`, … |
+| `request_id`, `trace_id`, `span_id` | ID korelasi buatan server dan konteks trace, atau `null` bila tidak ada |
+| `query`, `params`, `duration_ms`, `rows`, `error`, `sqlstate` | SQL driver dengan literal disamarkan, `params` selalu `[REDACTED]`, serta hasil eksekusi |
+
+Event HTTP menambah `http_method`, `http_route` (template, bukan URL mentah), `http_status`, dan `duration_ms`. Tidak pernah dicatat: cookie, header Authorization atau CSRF, kata sandi, DSN, ID sesi, badan
+request dan respons, serta query string. SQL disamarkan dengan redactor yang memahami SQL (termasuk dollar quote dan komentar); bila gagal, yang tercatat adalah `[REDACTED SQL]`, dan keluaran query dibatasi 16 KiB
+(`query_truncated=true`). Event utama: `http.request`, `auth.login`, `auth.logout`, `migration.created|submitted|approved|rejected`, `job.enqueued|claimed|revalidated|retry_scheduled|succeeded|failed|partial|uncertain|reconciled`,
+`lock.acquire.start|acquired|released`, `sql.exec.start|done`, `tx.commit|rollback`, `batch.start|commit|rollback`, dan `history.appended`. `sql.exec.done` yang berhasil belum berarti transaksi ter-commit; commit dicatat terpisah.
+
+Pohon span untuk satu eksekusi:
+
+```text
+HTTP POST /api/v1/databases/{database_id}/change-requests/{change_request_id}/execute
+  job.enqueue                          (producer)
+    job.process                        (consumer; mulai belakangan, trace yang sama)
+      lock.acquire
+      revalidate
+      sql.exec                         (normal)  atau  batch.process (nomor batch sebagai atribut)
+        db.query
+      history.append
+```
+
+Konteks trace dititipkan di `jobs.trace_context` (JSON `traceparent`, maksimum 4096 byte) saat enqueue lalu dipulihkan worker, sehingga span worker tersambung ke request API yang sama.
+
+Contoh satu eksekusi dari API sampai query pada database `demo`: respons `execute` `202` dengan `X-Request-Id: bb53a356adbe1572c5789528d8740da4`, seluruh jejak memakai `trace_id`
+`67dca5929411dced7d85f03b74acc820` (114 span di `tocatdz-server` dan `tocatdz-worker`). Di Loki, `{service_name="tocatdz-worker"} | json | job_id="<id>"` menampilkan `job.claimed`, `lock.acquire.start`,
+`lock.acquired`, `job.revalidated`, `sql.exec.start`, `sql.exec.done`, `tx.commit`, `history.appended`, `lock.released`, `job.succeeded` dengan `trace_id` yang sama.
+
+## Stress test
 
 Untuk stress test k6, seed akun dengan password yang sama dengan `K6_PASSWORD` (isi `SEED_SHARED_PASSWORD`),
 lalu jalankan k6 dengan `LEADER_USERS=admin,pengamat` agar kedua leader menyetujui perubahan pada `demo` dan `gudang`.
@@ -257,14 +445,6 @@ Password tidak disimpan di repo; masing-masing anggota tim mengisinya di `.env` 
 
 ## Test
 
-Mulai pengujian **khusus Milestone 2** dari
-[panduan demo langkah demi langkah](docs/testing/milestone-2-demo.md), termasuk
-expected output dan bonus observability, k6, serta CodeQL. Payload negatif dan
-reproduksi fault yang lebih rinci tersedia pada
-[panduan verifikasi teknis](docs/testing/milestone-2-e2e.md).
-Uji revisi seluruh attempt, retry, dan Hide rollback tersedia pada
-[panduan regresi history](docs/testing/milestone-2-history-regression.md).
-
 ```
 go test ./...                 # unit + integration in-memory
 go vet ./...
@@ -303,21 +483,12 @@ Tanpa `TEST_MYSQL_TARGET_DSN`, test MySQL otomatis dilewati. Workflow `.github/w
 
 Kontrak keamanan dan catatan audit dibagikan terpisah untuk koordinasi kelompok; signature API pada kode Go menjadi acuan implementasi.
 
-## Logging dan tracing
-
-Server dan worker menulis log JSON serta span OpenTelemetry ke stdout. Tracing
-aktif pada build biasa; exporter OTLP/HTTP tambahan dapat dikonfigurasi melalui
-variabel pada `.env.example`. Kontrak field, hasil pengujian, cara merekam ulang
-bukti, dan gate integrasi collector tersedia di
-[dokumentasi logging/tracing](docs/observability/log-trace-examples.md).
-
 ## Security: CodeQL
 
 Workflow CodeQL menganalisis Go dan JavaScript/TypeScript memakai query suite
 `security-extended` pada PR/push ke `main`, jadwal mingguan, dan trigger manual.
-Hasil dikirim ke GitHub Code scanning serta disimpan sebagai artifact SARIF dan
-metadata per run. Status scan, cakupan, register triase, referensi commit perbaikan,
-dan bukti scan ulang dicatat pada [laporan CodeQL](docs/security/codeql.md).
+Hasil dikirim ke GitHub Code scanning (tab Security) serta disimpan sebagai artifact SARIF dan
+metadata per run, sehingga temuan, status triase, dan bukti scan ulang setelah perbaikan dapat dilihat di sana.
 
 ## UI Credits
 
