@@ -264,3 +264,13 @@ func TestWorkflowRoutesDraftToQueuedJob(t *testing.T) {
 	}
 	send("POST", review+"/execute", `{"revision":2}`, 409)
 }
+
+func TestSucceededJobDoesNotCarryEarlierAttemptError(t *testing.T) {
+	failure := &migration.JobFailure{Code: migration.JobErrorConnection, Message: "target unavailable", Retryable: true}
+	if got := jobResponse(migration.JobView{Status: migration.JobSucceeded, Error: failure}); got.Error != nil {
+		t.Fatalf("succeeded job error = %+v, want none", got.Error)
+	}
+	if got := jobResponse(migration.JobView{Status: migration.JobFailed, Error: failure}); got.Error == nil || got.Error.Code != migration.JobErrorConnection {
+		t.Fatalf("failed job lost its error: %+v", got.Error)
+	}
+}

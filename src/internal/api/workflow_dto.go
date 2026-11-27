@@ -204,7 +204,10 @@ func jobResponse(job migration.JobView) workflowJobResponse {
 		FinishedAt: job.FinishedAt, Partial: job.Partial,
 		Progress: workflowJobProgress{p.BatchesCommitted, p.RowsCommitted, p.BatchesReverted, p.RowsReverted, p.TotalBatches},
 	}
-	response.Error = jobFailureResponse(job.Error)
+	// Job yang akhirnya sukses tidak membawa galat attempt sebelumnya; riwayat galat ada di daftar attempt.
+	if job.Status != migration.JobSucceeded {
+		response.Error = jobFailureResponse(job.Error)
+	}
 	return response
 }
 
