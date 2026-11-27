@@ -137,6 +137,7 @@ type SubmitChange struct {
 	Kind              ChangeKind
 	TargetExecutionID security.ID // Required for rollback/forward; see K2.
 	SourceJobID       security.ID // Required for resume/revert; optional apply only for an explicit repair.
+	RetryOfJobID      security.ID // Server-owned normal retry lineage, set by RetryFailedJob.
 }
 
 type ChangeRequest struct {

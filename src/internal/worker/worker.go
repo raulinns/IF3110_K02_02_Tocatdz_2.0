@@ -266,6 +266,9 @@ func (w *Worker) handle(parent context.Context, lease migration.JobLease) {
 		meta = logging.OperationFromContext(runCtx)
 		meta.Revision, meta.Direction, meta.Mutation = plan.Definition.Revision, string(plan.Direction), true
 		runCtx = logging.WithOperation(runCtx, meta)
+		if recorder, ok := w.cfg.Store.(migration.StatementRecorder); ok {
+			runCtx = migration.WithStatementRecorder(runCtx, recorder, lease)
+		}
 		started := w.now()
 		result, runErr := w.cfg.Runner.Run(runCtx, plan, target, w.cfg.Progress)
 		w.cfg.Observer.RunFinished(lease.Job.Kind, lease.Job.Mode, w.now().Sub(started))

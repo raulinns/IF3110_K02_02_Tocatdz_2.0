@@ -17,6 +17,63 @@ const table = async () => within(await screen.findByRole('table', { name: 'Riway
 const bodyRows = async () => (await table()).getAllByRole('row').slice(1).filter((row) => row.id.startsWith('execution-'))
 const positions = async () => (await bodyRows()).map((row) => within(row).getAllByRole('cell')[0].textContent)
 
+function seedFailedAttempt() {
+  const { job, request } = seedJob()
+  request.status = 'failed'
+  job.status = 'failed'
+  job.attempt = 1
+  job.started_at = '2026-11-27T09:00:00Z'
+  job.finished_at = '2026-11-27T09:00:01Z'
+  job.error = {code: 'sql_error', message: 'Transaksi dibatalkan.', sqlstate: '23505', retryable: false}
+  job.attempts = [{attempt: 1, status: 'failed', started_at: job.started_at, finished_at: job.finished_at, error: job.error}]
+  return job
+}
+
+describe('riwayat seluruh attempt', () => {
+  it('attempt gagal tetap terlihat saat Hide rollback aktif dan tidak mempunyai posisi commit', async () => {
+    seedFailedAttempt()
+    const {user} = openAs('reviewer', history)
+    const badge = await screen.findByText('Gagal', {selector: '.badge'})
+    const row = badge.closest('tr')!
+    expect(within(row).getAllByRole('cell')[0]).toHaveTextContent('—')
+    expect(within(row).queryByText('Aktif')).not.toBeInTheDocument()
+    expect(within(row).getByText('Percobaan 1')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Sembunyikan rollback'))
+    await waitFor(async () => expect(await bodyRows()).toHaveLength(3))
+    expect(screen.getByText('Gagal', {selector: '.badge'})).toBeInTheDocument()
+  })
+
+  it('detail kegagalan menampilkan snapshot dan hasil statement yang disamarkan', async () => {
+    const job = seedFailedAttempt()
+    const {user} = openAs('reviewer', history)
+    const row = (await screen.findByText('Gagal', {selector: '.badge'})).closest('tr')!
+    await user.click(within(row).getByRole('button', {name: 'SQL'}))
+    expect(await sqlOf('Salinan SQL up')).toBe(job.plan.sql)
+    expect(await screen.findByText(/Statement gagal.*23505/)).toBeInTheDocument()
+  })
+
+  it('pengajuan ulang membuat CR baru dan mengosongkan seluruh approval', async () => {
+    const job = seedFailedAttempt()
+    const {user} = openAs('reviewer', history)
+    await user.click(await screen.findByRole('button', {name: 'Jalankan ulang'}))
+    const dialog = screen.getByRole('dialog', {name: 'Ajukan jalankan ulang'})
+    await user.click(within(dialog).getByRole('button', {name: 'Ajukan'}))
+    await waitFor(() => expect(screen.getByText('Permintaan jalankan ulang dibuat. Semua group harus menyetujui lagi.')).toBeInTheDocument())
+    const request = getState().changeRequests.find((entry) => entry.retry_of_job_id === job.id)!
+    expect(request.status).toBe('pending_review')
+    expect(request.approvals).toHaveLength(2)
+    expect(request.approvals.every((approval) => approval.decision === null)).toBe(true)
+    expect(getState().jobs.some((entry) => entry.change_request_id === request.id)).toBe(false)
+  })
+
+  it('pengamat dapat membaca kegagalan tanpa tombol pengajuan ulang', async () => {
+    seedFailedAttempt()
+    openAs('observer', history)
+    await screen.findByText('Gagal', {selector: '.badge'})
+    expect(screen.queryByRole('button', {name: 'Jalankan ulang'})).not.toBeInTheDocument()
+  })
+})
+
 describe('riwayat eksekusi', () => {
   it('menampilkan contoh E1 sampai E5 terbaru lebih dulu dengan operasi dan arahnya', async () => {
     openAs('reviewer', history)
@@ -93,12 +150,12 @@ describe('sembunyikan rollback', () => {
   })
 
   it('menonaktifkan kembali menampilkan seluruh riwayat dan mengirim parameter ke server hanya saat aktif', async () => {
-    const spy = interceptFetch('/executions')
+    const spy = interceptFetch('/history')
     const { user } = openAs('reviewer', `${history}?hide_rollback=true`)
     await bodyRows()
     await user.click(screen.getByLabelText('Sembunyikan rollback'))
     await waitFor(async () => expect(await bodyRows()).toHaveLength(5))
-    const urls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/executions?'))
+    const urls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/history?'))
     expect(urls.some((url) => url.includes('hide_rollback=true'))).toBe(true)
     expect(urls.at(-1)).not.toContain('hide_rollback')
   })
@@ -162,6 +219,7 @@ function seedBatchExecution(batches: number) {
     ...latest,
     id: crypto.randomUUID(),
     position_version: latest.position_version + 1,
+    started_at: '2026-11-13T09:59:00Z',
     committed_at: '2026-11-13T10:00:00Z',
     statements: Array.from({ length: batches }, (_, index) => ({ query, params: ['[REDACTED]', '[REDACTED]', '[REDACTED]'], batch: index + 1 })),
   })

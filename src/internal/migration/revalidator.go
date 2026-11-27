@@ -80,6 +80,11 @@ func buildRevalidatedPlan(s RevalidationSnapshot, claimed JobView) (ExecutionPla
 		ReceiptExecutionID: job.ExecutionID, ActorID: change.RequestedBy, Kind: change.Kind, Direction: DirectionUp,
 		Definition: definition, ExpectedPosition: change.ExpectedPosition, TargetExecutionID: change.TargetExecutionID,
 		SourceJobID: change.SourceJobID, ScopeMax: job.ScopeMax}
+	if change.RetryOfJobID != "" {
+		if s.SourceJob == nil || !validRetryPlan(*s.SourceJob, s.SourcePlan, change, definition) {
+			return ExecutionPlan{}, RevalidationRejection("manual retry source changed")
+		}
+	}
 	switch change.Kind {
 	case ChangeApply:
 		if change.TargetExecutionID != "" || (change.SourceJobID == "" && len(s.Position.Forward) != 0) {

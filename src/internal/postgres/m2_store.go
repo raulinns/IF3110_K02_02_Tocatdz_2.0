@@ -130,7 +130,7 @@ func encodeBatch(config *migration.BatchConfig) (any, error) {
 }
 
 func decodeBatch(raw []byte) (*migration.BatchConfig, error) {
-	if len(raw) == 0 {
+	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
 	var value batchJSON
@@ -273,7 +273,7 @@ func (s *M2Store) ListDefinitions(ctx context.Context, databaseID security.ID, q
 
 const changeRequestColumns = `c.id::text, c.database_id::text, c.migration_id::text, c.migration_revision, c.kind,
 	COALESCE(c.target_execution_id::text, ''), COALESCE(c.source_job_id::text, ''), c.revision, c.checksum, c.status,
-	c.requested_by::text, c.expected_position_version, c.created_at, c.updated_at`
+	c.requested_by::text, c.expected_position_version, c.created_at, c.updated_at, COALESCE(c.retry_of_job_id::text,'')`
 
 func scanChangeRequest(row pgx.Row) (migration.ChangeRequest, error) {
 	var c migration.ChangeRequest
@@ -281,7 +281,7 @@ func scanChangeRequest(row pgx.Row) (migration.ChangeRequest, error) {
 	var migrationRevision, revision, position int64
 	var checksum []byte
 	if err := row.Scan(&id, &database, &migrationID, &migrationRevision, &kind, &target, &source, &revision, &checksum, &status,
-		&requestedBy, &position, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		&requestedBy, &position, &c.CreatedAt, &c.UpdatedAt, &c.RetryOfJobID); err != nil {
 		return migration.ChangeRequest{}, mapError(err)
 	}
 	c.ID, c.DatabaseID, c.MigrationID = security.ID(id), security.ID(database), security.ID(migrationID)

@@ -99,6 +99,7 @@ function setRequestStatus(request: MockChangeRequest, status: MockChangeRequest[
 function closeAttempt(job: MockJob, status: Schemas['JobStatus'], error: Schemas['JobFailure'] | null, finished: boolean) {
   const attempt = job.attempts.at(-1)
   if (!attempt) return
+  if (attempt.finished_at !== null) return
   attempt.status = status
   attempt.error = error
   if (finished) attempt.finished_at = now()
@@ -184,7 +185,7 @@ function markUncertain(job: MockJob, request: MockChangeRequest) {
   job.error = failures.uncertain
   job.partial = job.progress.batches_committed > 0
   job.plan.uncertainAt = job.ticks
-  closeAttempt(job, 'uncertain', failures.uncertain, false)
+  closeAttempt(job, 'uncertain', failures.uncertain, true)
   setRequestStatus(request, 'uncertain')
   bumpPosition(job.database_id)
 }

@@ -28,7 +28,7 @@ tags:
 - name: Jobs
   description: Progress and attempt metadata.
 - name: History
-  description: Committed executions and linear position.
+  description: All execution attempts, committed receipts, and linear position.
 - name: Operations
   description: Internal operations endpoints outside the API prefix.
 security:
@@ -2139,7 +2139,7 @@ paths:
       summary: Read append-only committed history
       description: Stable committed_at DESC, id DESC. Pair across ALL history by reverts_execution_id BEFORE pagination.
         Hide both original execution and its successful rollback, never a later forward. E1..E5 fixture hides E2/E3.
-        Failed/partial attempts remain in jobs; no history is deleted.
+        Failed/partial attempts are visible in /history and jobs; no history is deleted.
       x-access: view
       responses:
         '200':
@@ -2386,6 +2386,161 @@ paths:
       security: []
     servers:
     - url: /
+  /databases/{database_id}/history:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    get:
+      operationId: listAttemptHistory
+      tags:
+      - History
+      summary: Read attempt history including failures
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryPage'
+          headers: &id001
+            X-Request-ID:
+              $ref: '#/components/headers/RequestID'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+      - name: hide_rollback
+        in: query
+        schema:
+          type: boolean
+          default: false
+      x-access: view
+  /databases/{database_id}/history/{history_id}:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/history_id'
+    get:
+      operationId: getAttemptHistory
+      tags:
+      - History
+      summary: Read attempt history including failures
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryEntry'
+          headers: *id001
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+      x-access: view
+  /databases/{database_id}/history/{history_id}/statements:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/history_id'
+    get:
+      operationId: listAttemptHistoryStatements
+      tags:
+      - History
+      summary: Read attempt history including failures
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryStatementsPage'
+          headers: *id001
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/Internal'
+      parameters:
+      - $ref: '#/components/parameters/page'
+      - $ref: '#/components/parameters/limit'
+      x-access: view
+  /databases/{database_id}/jobs/{job_id}/retry:
+    parameters:
+    - $ref: '#/components/parameters/database_id'
+    - $ref: '#/components/parameters/job_id'
+    post:
+      operationId: retryFailedJob
+      tags:
+      - Workflow
+      summary: Create a fresh CR for a failed normal operation; current approvals are required again
+      parameters:
+      - $ref: '#/components/parameters/csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '201':
+          description: New pending review request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequest'
+          headers: *id001
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '500':
+          $ref: '#/components/responses/Internal'
+      x-access: view_edit
 components:
   securitySchemes:
     sessionCookie:
@@ -2394,6 +2549,12 @@ components:
       name: tocatdz_session
       description: HttpOnly cookie, browser-managed. Never put the session identifier in a response model.
   parameters:
+    history_id:
+      name: history_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ID'
     database_id:
       name: database_id
       in: path
@@ -2676,6 +2837,213 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
+    HistoryEntry:
+      type: object
+      additionalProperties: false
+      description: An attempt, including failures. Status is preserved; resolved_status records proven reconciliation.
+        Only committed results affect position. SQL snapshots are not proof of dispatch.
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        database_id:
+          $ref: '#/components/schemas/ID'
+        migration_id:
+          $ref: '#/components/schemas/ID'
+        execution_id:
+          $ref: '#/components/schemas/ID'
+        job_id:
+          type: string
+          format: uuid
+          nullable: true
+        change_request_id:
+          type: string
+          format: uuid
+          nullable: true
+        retry_of_job_id:
+          type: string
+          format: uuid
+          nullable: true
+        actor_id:
+          type: string
+          format: uuid
+          nullable: true
+        reverts_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        forward_of_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        checksum:
+          type: string
+          description: Empty for legacy records whose checksum is unavailable.
+        migration_revision:
+          $ref: '#/components/schemas/Revision'
+        attempt:
+          type: integer
+          minimum: 0
+          description: Zero denotes legacy committed history without an attempt.
+        operation:
+          $ref: '#/components/schemas/ChangeKind'
+        direction:
+          type: string
+          nullable: true
+          enum:
+          - up
+          - down
+          - null
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        resolved_status:
+          $ref: '#/components/schemas/JobStatus'
+        actor:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        committed_at:
+          type: string
+          format: date-time
+          nullable: true
+        position_version:
+          type: integer
+          format: int64
+          nullable: true
+        can_retry:
+          type: boolean
+          description: Hint only; POST retry rechecks authorization and current state.
+        snapshot_available:
+          type: boolean
+        error:
+          allOf:
+          - $ref: '#/components/schemas/JobFailure'
+          nullable: true
+        up_sql:
+          type: string
+          nullable: true
+        down_sql:
+          type: string
+          nullable: true
+        sql_snapshot:
+          type: string
+          nullable: true
+      required:
+      - id
+      - database_id
+      - migration_id
+      - execution_id
+      - job_id
+      - change_request_id
+      - retry_of_job_id
+      - actor_id
+      - reverts_execution_id
+      - forward_of_execution_id
+      - checksum
+      - migration_revision
+      - attempt
+      - operation
+      - direction
+      - status
+      - resolved_status
+      - actor
+      - started_at
+      - finished_at
+      - committed_at
+      - position_version
+      - can_retry
+      - snapshot_available
+      - error
+      - up_sql
+      - down_sql
+      - sql_snapshot
+    HistoryStatement:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+        params:
+          type: array
+          items:
+            type: string
+            enum:
+            - '[REDACTED]'
+        batch:
+          type: integer
+          format: int64
+          nullable: true
+        ordinal:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+          - started
+          - succeeded
+          - failed
+          description: Statement result, never proof of transaction commit; started means result unavailable.
+        sqlstate:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - query
+      - params
+      - batch
+      - ordinal
+      - status
+      - sqlstate
+      - started_at
+      - finished_at
+    HistoryPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryEntry'
+        page:
+          type: integer
+        limit:
+          type: integer
+        has_next:
+          type: boolean
+    HistoryStatementsPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - limit
+      - has_next
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryStatement'
+        page:
+          type: integer
+        limit:
+          type: integer
+        has_next:
+          type: boolean
     ID:
       type: string
       format: uuid
@@ -3835,6 +4203,11 @@ components:
       type: object
       additionalProperties: false
       properties:
+        retry_of_job_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Source failed normal job for an approved manual retry.
         id:
           $ref: '#/components/schemas/ID'
         database_id:

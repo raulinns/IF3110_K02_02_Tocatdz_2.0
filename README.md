@@ -183,10 +183,10 @@ CompleteCommitted ── satu transaksi platform: executions + posisi + job/CR/a
 | Lock berlaku lintas worker dan di antara commit batch | Lock bersifat session-level pada satu koneksi khusus dan tidak lepas saat transaksi batch di-commit. |
 | Pesan duplikat tidak menyebabkan double commit | `UNIQUE(change_request_id)` pada `jobs`, lease token yang memagari worker lama, dan receipt per `execution_id` yang diperiksa sebelum SQL dijalankan. |
 
-**Retry.** Hanya untuk kegagalan sementara: SQLSTATE `40001`, `40P01`, `55P03`, kelas `08`, serta `57P01`–`57P03`, atau target tidak bisa dihubungi
+**Retry otomatis.** Hanya untuk kegagalan sementara: SQLSTATE `40001`, `40P01`, `55P03`, kelas `08`, serta `57P01`–`57P03`, atau target tidak bisa dihubungi
 sebelum ada SQL yang dikirim. Jumlah attempt dibatasi `max_attempts`, dengan backoff eksponensial (2 detik, 4 detik, … maksimum 1 menit) dan jitter.
 Setiap attempt, termasuk yang gagal, tercatat di `job_attempts`. Error SQL permanen (misalnya `42P01`) langsung menjadi `failed`: transaksi di-rollback,
-history tidak bertambah, dan posisi aktif tetap.
+attempt gagal tetap muncul di Riwayat tanpa commit baru, dan posisi aktif tetap.
 
 **Pemulihan lock ketika worker gagal.**
 1. Worker mati saat memegang lock: koneksi ke target terputus dan PostgreSQL otomatis melepas advisory lock session-level milik koneksi itu. Lock tidak pernah tertinggal.
@@ -198,6 +198,32 @@ history tidak bertambah, dan posisi aktif tetap.
 
 **Menjalankan worker.** `cd src && go run ./cmd/worker` memakai `.env` yang sama dengan server. Variabel khusus: `WORKER_ID` (bawaan `hostname-pid`) dan `WORKER_CONCURRENCY`
 (bawaan 2, rentang 1–64). Untuk pengembangan, worker bisa berjalan di dalam proses server dengan `EMBEDDED_WORKER=true`. Worker menolak start jika revalidator tidak tersedia.
+
+### Riwayat seluruh attempt
+
+Riwayat mencatat semua attempt, termasuk gagal, partial, uncertain, retry, rollback, dan forward.
+Setiap attempt mempunyai ID history sendiri; retry otomatis dapat memakai execution ID yang sama.
+SQL yang dikirim ke driver dicatat sebelum dispatch, lalu hasil statement disimpan terpisah agar tetap tersedia
+ketika transaksi target dibatalkan. Statement berhasil bukan bukti commit transaksi; hasil yang belum tercatat
+ditampilkan sebagai belum diketahui. Snapshot SQL dan attempt yang telah selesai tidak ditimpa.
+
+Hide rollback menyembunyikan pasangan eksekusi committed dan rollback sukses berdasarkan execution ID,
+sebelum pagination. Kegagalan dan forward berikutnya tetap terlihat. Status attempt awal tetap tersimpan
+ketika rekonsiliasi menambahkan hasil yang sudah terbukti. Data lama tanpa snapshot ditandai tidak tersedia.
+
+Kontrak lengkap tersedia di [OpenAPI](api/openapi.yaml). Endpoint berikut memakai prefix `/api/v1`:
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /databases/{database_id}/history` | Daftar seluruh attempt; mendukung `page`, `limit`, dan `hide_rollback`, tanpa badan SQL. |
+| `GET /databases/{database_id}/history/{history_id}` | Detail dan snapshot SQL immutable untuk pengguna dengan grant database. |
+| `GET /databases/{database_id}/history/{history_id}/statements` | Statement per halaman, hasil, dan SQLSTATE; literal serta parameter sensitif disamarkan. |
+| `POST /databases/{database_id}/jobs/{job_id}/retry` | JSON `{}` membuat CR baru untuk job normal gagal yang dapat diulang, dengan approval seluruh group kembali. Memerlukan grant ubah dan CSRF. |
+
+Retry manual memakai SQL asli dan target yang sama; perubahan posisi, permission, checksum, source yang belum pasti,
+dan pengajuan ganda diperiksa ulang. Jika SQL perlu diubah, buat migration baru. Pemulihan batch tetap melalui Resume/Revert.
+`/executions` dan `/position` tetap memakai bukti commit untuk menentukan posisi linear; attempt gagal tidak menjadi posisi baru.
+Schema `0005_attempt_history.sql` diterapkan migrator platform. Build ulang lalu restart server dan worker bersama saat menerapkan versi ini.
 
 ### Mode batch
 

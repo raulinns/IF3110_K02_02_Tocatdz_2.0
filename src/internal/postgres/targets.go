@@ -533,8 +533,16 @@ type targetTx struct {
 
 // SQL migration dikirim tanpa parameter sehingga pgx memakai simple protocol dan beberapa statement bisa jalan dalam satu transaksi.
 func (t *targetTx) Execute(ctx context.Context, sql security.Secret) error {
-	if _, err := t.tx.Exec(ctx, sql.Reveal()); err != nil {
-		return statementFailure(err)
+	finish, err := migration.StartAttemptStatement(ctx, migration.ExecutedStatement{Query: sql})
+	if err != nil {
+		return err
+	}
+	_, queryErr := t.tx.Exec(ctx, sql.Reveal())
+	if err := finish(queryErr); err != nil {
+		return err
+	}
+	if queryErr != nil {
+		return statementFailure(queryErr)
 	}
 	return nil
 }

@@ -158,7 +158,7 @@ func (s *WorkflowService) Submit(ctx context.Context, req Request, input SubmitC
 	if definition.ID != input.MigrationID || definition.DatabaseID != req.DatabaseID {
 		return ChangeRequest{}, security.ErrUnavailable
 	}
-	if definition.Revision != input.MigrationRevision || !validSubmissionState(input.Kind, definition) {
+	if definition.Revision != input.MigrationRevision || !validChangeDefinition(input, definition) {
 		return ChangeRequest{}, security.ErrConflict
 	}
 	if definition.Checksum != ChecksumDefinition(definition.DefinitionInput) {
@@ -184,7 +184,7 @@ func (s *WorkflowService) Submit(ctx context.Context, req Request, input SubmitC
 		if err != nil {
 			return err
 		}
-		if !validSubmissionState(input.Kind, current) ||
+		if !validChangeDefinition(input, current) ||
 			current.Revision != definition.Revision || current.Checksum != definition.Checksum {
 			return security.ErrConflict
 		}

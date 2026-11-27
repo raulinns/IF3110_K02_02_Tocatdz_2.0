@@ -73,12 +73,14 @@ export const executionQuery = (db: string, id: string) =>
 // Statement yang dijalankan dimuat per halaman karena satu eksekusi batch bisa memuat ratusan batch
 export const statementsPageSize = 25
 
-export const statementsQuery = (db: string, id: string, page: number) =>
+export const statementsQuery = (db: string, id: string, page: number, historyId?: string) =>
   queryOptions({
-    queryKey: [...base(db), 'executions', 'statements', id, page],
-    queryFn: ({ signal }) => api.get<Page<Schemas['ExecutedStatement']>>(path`/databases/${db}/executions/${id}/statements`, { query: { page, limit: statementsPageSize }, signal }),
+    queryKey: [...base(db), 'executions', 'statements', historyId ?? id, page],
+    queryFn: ({ signal }) => api.get<Page<Schemas['ExecutedStatement'] & { status?: 'started' | 'succeeded' | 'failed'; sqlstate?: string | null }>>(
+      historyId ? path`/databases/${db}/history/${historyId}/statements` : path`/databases/${db}/executions/${id}/statements`,
+      { query: { page, limit: statementsPageSize }, signal }),
     placeholderData: keepPreviousData,
-    staleTime: Infinity,
+    staleTime: 0,
   })
 
 export const decide = (db: string, id: string, input: Schemas['ApprovalInput']) => api.post<Schemas['ChangeRequest']>(path`/databases/${db}/change-requests/${id}/approvals`, input)

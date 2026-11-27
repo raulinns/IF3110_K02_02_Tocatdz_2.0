@@ -4,6 +4,7 @@ import { ids, workflowIds as w } from '../ids.ts'
 import { failureOf, setupMockServer, signIn } from '../testing.ts'
 import { authHandlers } from './auth.ts'
 import { historyHandlers } from './history.ts'
+import { seedJob } from '../../test/workflow.ts'
 
 setupMockServer(...authHandlers, ...historyHandlers)
 
@@ -11,6 +12,29 @@ type Page<T> = { items: T[]; page: number; limit: number; has_next: boolean }
 
 const base = `/databases/${ids.inventaris}`
 const idsOf = (page: Page<Schemas['ExecutionSummary']>) => page.items.map((item) => item.id)
+
+describe('GET attempt history', () => {
+  it('failed attempt remains visible with Hide rollback and has no committed position', async () => {
+    const {job, request} = seedJob()
+    request.status = 'failed'
+    job.status = 'failed'
+    job.attempt = 1
+    job.attempts = [{attempt: 1, status: 'failed', started_at: '2026-11-27T09:00:00Z', finished_at: '2026-11-27T09:00:01Z', error: null}]
+    const {client} = await signIn('reviewer')
+    const page = await client.get<Schemas['HistoryPage']>(`${base}/history`, {query: {hide_rollback: true}})
+    const failure = page.items.find((entry) => entry.job_id === job.id)!
+    expect(page.items).toHaveLength(4)
+    expect(failure).toMatchObject({status: 'failed', committed_at: null, position_version: null, sql_snapshot: null})
+    expect((await failureOf(client.get(`/databases/${ids.pelaporan}/history/${failure.id}`))).status).toBe(404)
+  })
+
+  it('attempt history rejects foreign query keys and missing database access', async () => {
+    const {client} = await signIn('observer')
+    expect((await failureOf(client.get(`${base}/history`, {query: {unknown: true}}))).status).toBe(400)
+    const auditor = await signIn('auditor')
+    expect((await failureOf(auditor.client.get(`${base}/history`))).status).toBe(403)
+  })
+})
 
 describe('GET executions', () => {
   it('riwayat terbaru lebih dulu tanpa badan SQL', async () => {

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { allMigrationsQuery, executionsQuery, positionQuery } from '../../api/workflow.ts'
+import { allMigrationsQuery, positionQuery } from '../../api/workflow.ts'
+import { historyQuery } from '../../api/history.ts'
 import { ApiErrorView } from '../../components/ui/ApiErrorView.tsx'
 import { Pager } from '../../components/ui/Pager.tsx'
 import { BoxSkeleton } from '../../components/ui/Skeleton.tsx'
 import { readPage } from '../../lib/pagination.ts'
 import { useDatabase } from '../../lib/useDatabase.ts'
-import { ExecutionRow } from './ExecutionRow.tsx'
+import { AttemptRow } from './AttemptRow.tsx'
 import { PositionCard } from './PositionCard.tsx'
 
 const highlightMs = 2000
@@ -18,7 +19,7 @@ export function HistoryPage() {
   const page = readPage(params)
   // Hide rollback tersimpan di URL supaya pilihan ini ikut saat tautan dibagikan atau halaman dimuat ulang
   const hide = params.get('hide_rollback') === 'true'
-  const query = useQuery(executionsQuery(db, page, hide))
+  const query = useQuery(historyQuery(db, page, hide))
   const position = useQuery(positionQuery(db))
   const migrations = useQuery(allMigrationsQuery(db))
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -54,7 +55,7 @@ export function HistoryPage() {
     timer.current = window.setTimeout(() => setHighlighted(null), highlightMs)
   }
 
-  const numberOf = (id: string) => data?.items.find((execution) => execution.id === id)?.position_version
+  const numberOf = (id: string) => data?.items.find((execution) => execution.execution_id === id && execution.committed_at !== null)?.position_version ?? undefined
 
   return (
     <>
@@ -70,6 +71,7 @@ export function HistoryPage() {
           </label>
           <div id="hide-rollback-hint" className="form-text mt-0">
             Menyembunyikan eksekusi yang sudah di-rollback beserta rollback-nya.
+            Attempt gagal tetap ditampilkan.
           </div>
         </div>
       </div>
@@ -88,6 +90,7 @@ export function HistoryPage() {
                       <th scope="col">Waktu</th>
                       <th scope="col">Migration</th>
                       <th scope="col">Operasi</th>
+                      <th scope="col">Status / percobaan</th>
                       <th scope="col">Aktor</th>
                       <th scope="col">Terkait</th>
                       <th scope="col" className="text-end">
@@ -97,13 +100,14 @@ export function HistoryPage() {
                   </thead>
                   <tbody>
                     {data.items.map((execution) => (
-                      <ExecutionRow
+                      <AttemptRow
                         key={execution.id}
                         db={db}
-                        execution={execution}
+                        entry={execution}
+                        canEdit={canEdit}
                         title={titleOf(execution.migration_id)}
-                        active={execution.id === position.data?.active_execution_id}
-                        highlighted={execution.id === highlighted}
+                        active={execution.committed_at !== null && execution.execution_id === position.data?.active_execution_id}
+                        highlighted={execution.execution_id === highlighted}
                         expanded={expanded.has(execution.id)}
                         onToggle={() => toggle(execution.id)}
                         numberOf={numberOf}
@@ -112,7 +116,7 @@ export function HistoryPage() {
                     ))}
                     {data.items.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="text-muted">
+                        <td colSpan={8} className="text-muted">
                           {data.page > 1 ? (
                             <>
                               Tidak ada eksekusi di halaman ini. <Link to={{ search: search({ hide }) }}>Kembali ke halaman pertama</Link>
