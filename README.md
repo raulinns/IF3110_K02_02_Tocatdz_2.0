@@ -424,8 +424,9 @@ Analisis:
   `GET /databases` dengan 503 (batas waktu) dan kembali sehat saat beban turun. Waktu antre job hampir tidak berubah (1,2–1,7 detik), jadi worker bukan penyempit.
 - **Cacat yang ditemukan oleh stress test ini:** `AuthService.Authenticate` menulis baris sesi dengan compare-and-swap pada *setiap* request dan hanya mencoba 3 kali. Request paralel pada satu
   sesi saling mengalahkan lalu dibalas 409 (5 request paralel: 2 gagal, 40: 35 gagal; reproduksi dengan `loadtest/k6/diagnostics/session-contention.mjs`). Kolom "Server apa adanya" pada tabel di atas
-  adalah akibatnya. Perbaikan eksperimen (menulis sesi hanya saat rotasi atau `last_seen` lebih tua dari 30 detik) ada di `docs/k6/usulan-perbaikan-sesi.patch` dan menjadikan 40 request paralel
-  semuanya 200. Perbaikan itu belum diterapkan ke kode karena berkas keamanan dimiliki anggota lain.
+  adalah akibatnya. Perbaikannya (menulis sesi hanya saat rotasi, kenaikan hak, atau `last_seen` lebih tua dari 30 detik) kini diterapkan di `AuthService.Authenticate` dan menjadikan 40 request paralel
+  semuanya 200; `docs/k6/usulan-perbaikan-sesi.patch` disimpan sebagai bukti asalnya. Angka pada tabel di atas diukur sebelum perbaikan ini masuk ke kode: kolom "Server apa adanya" tanpa perbaikan,
+  kolom "Dengan perbaikan sesi" dengan patch yang sama. `last_seen` kini bisa tertinggal hingga 30 detik dari aktivitas terakhir, jauh di bawah batas idle 30 menit.
 - Respons 409 pada `POST .../change-requests` adalah penolakan yang diharapkan (satu permintaan terbuka per database); skrip mengulang pengajuan dan mencatatnya sebagai `submit_conflicts`.
 - Ambang `p(95)<500 ms` untuk pembacaan tidak terpenuhi bahkan pada 1× (662 ms) di mesin ini, sedangkan `http_req_failed<1 %` dan `job_success>95 %` tidak terpenuhi karena sisa kegagalan pada beban 8×.
 - Login dibatasi 5 per akun per menit dan tidak bisa diatur, sehingga k6 memakai kolam sesi kecil per akun (maksimal 5) dan `setup()` menunggu `Retry-After` bila batas itu terpakai.
@@ -489,6 +490,19 @@ Workflow CodeQL menganalisis Go dan JavaScript/TypeScript memakai query suite
 `security-extended` pada PR/push ke `main`, jadwal mingguan, dan trigger manual.
 Hasil dikirim ke GitHub Code scanning (tab Security) serta disimpan sebagai artifact SARIF dan
 metadata per run, sehingga temuan, status triase, dan bukti scan ulang setelah perbaikan dapat dilihat di sana.
+
+**Cakupan.** Go: seluruh paket yang dikompilasi `go build ./...` (berkas `_test.go` tidak ikut karena tidak dibangun), 35 aturan dijalankan. JavaScript/TypeScript: seluruh berkas terlacak di `web/`, `loadtest/`, dan sekitarnya, kecuali `node_modules`, `dist`, `vendor`, `coverage`, `playwright-report`, dan `test-results`, 103 aturan dijalankan. Query suite `security-extended`. Daftar berkas yang dipindai tiap run ada di artifact `source-inventory.txt`.
+
+**Temuan dan keputusan.** Scan pada commit `0eee45c` menghasilkan dua alert, keduanya severity *high* dan keduanya diperbaiki di commit `20fc097`:
+
+| # | Aturan | Lokasi | Dampak | Keputusan |
+| --- | --- | --- | --- | --- |
+| 1 | `js/clear-text-logging` | `loadtest/k6/diagnostics/session-contention.mjs:12` | Skrip diagnostik mencetak nilai dari variabel environment (`USERNAME`) saat login gagal. Yang tercetak nama akun, bukan kata sandi, dan skrip hanya dipakai manual. | **Diperbaiki.** Pesan galat tidak lagi memuat nama akun. |
+| 2 | `go/incorrect-integer-conversion` | `src/internal/security/password_hasher.go:87` | Konversi `uint8(values[2])` dari hasil `strconv.ParseUint`. Dalam praktik nilainya sudah dibatasi 1 sampai 4 sebelum konversi, sehingga tidak ada dampak nyata; CodeQL tidak melihat batas itu karena nilainya disimpan dalam array. | **Diperbaiki.** Nilai dipindahkan ke variabel lokal dan batasnya diperiksa langsung sebelum konversi, agar batas itu eksplisit dan terbaca analisis. |
+
+Tidak ada alert yang diterima sebagai risiko atau ditandai *false positive*. Hasil bersih tidak berarti aplikasi pasti aman: CodeQL hanya menganalisis kode statis dan tidak mencakup konfigurasi, dependensi, maupun perilaku saat berjalan.
+
+**Scan ulang.** Analisis CodeQL pada PR #54 (head `978101c`) berisi kedua perbaikan dan menghasilkan 0 temuan untuk Go (35 aturan) dan untuk JavaScript/TypeScript (103 aturan); tidak ada alert terbuka pada ref PR tersebut.
 
 ## UI Credits
 
