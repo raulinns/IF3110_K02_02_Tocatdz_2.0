@@ -9,7 +9,7 @@ const sizes = (process.env.PARALLEL ?? '1,5,10,20,40').split(',').map(Number)
 
 const login = await fetch(`${api}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: new URL(base).origin }, body: JSON.stringify({ username, password }) })
 if (login.status !== 200) {
-  console.error(`login ${username} gagal dengan status ${login.status}`)
+  console.error(`login gagal dengan status ${login.status}`)
   process.exit(1)
 }
 const cookie = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ')
